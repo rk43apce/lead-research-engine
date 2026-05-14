@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import time
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
@@ -11,9 +10,7 @@ from bs4 import BeautifulSoup
 
 from services.models import Lead, PublicSignal, ResearchContext, SearchResult, SignalType
 from services.scraper import AsyncScraper
-from services.logger import elapsed_ms, log_context, log_step
-
-LOGGER = logging.getLogger(__name__)
+from services.logger import log_error, log_info, log_timing, log_warning
 
 SIGNAL_QUERIES = (
     '"{company}" fraud risk banking',
@@ -47,81 +44,70 @@ class DuckDuckGoResearcher:
         self.results_per_query = results_per_query
 
     async def research(self, lead: Lead) -> ResearchContext:
-        with log_step(LOGGER, "research", "research company", website=lead.website):
-            context = ResearchContext(lead=lead)
-            if lead.website:
-                pages = await self.scraper.fetch_home_and_about(lead.website)
-                context.homepage_url = pages[0].url if pages else lead.website
-                context.about_text = "\n\n".join(page.text for page in pages if page.text)[:15000]
-                context.errors.extend(page.error for page in pages if page.error)
-                LOGGER.info(
-                    "Homepage research complete homepage_url=%s about_chars=%s scrape_errors=%s",
-                    context.homepage_url,
-                    len(context.about_text),
-                    len(context.errors),
-                )
-            else:
-                LOGGER.warning("No website provided; skipping homepage scrape")
-
-            try:
-                context.search_results = await self._search_company_signals(lead.company)
-            except Exception as exc:  # Keep one bad search from killing the batch.
-                LOGGER.exception("Search failed error=%s", exc)
-                context.errors.append(f"Search failed: {exc}")
-
-            context.public_signal = self._choose_signal(lead.company, context.search_results)
-            LOGGER.info(
-                "Research complete search_results=%s has_signal=%s signal_type=%s source_url=%s",
-                len(context.search_results),
-                bool(context.public_signal.source_url),
-                context.public_signal.signal_type.value,
-                context.public_signal.source_url or "-",
-            )
-            return context
-
-    async def _search_company_signals(self, company: str) -> list[SearchResult]:
-        with log_context(step="duckduckgo_search"):
-            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-            async with aiohttp.ClientSession(
-                timeout=timeout,
-                headers={"User-Agent": "Mozilla/5.0"},
-            ) as session:
-                queries = [query.format(company=company) for query in SIGNAL_QUERIES]
-                LOGGER.info("DuckDuckGo search start query_count=%s", len(queries))
-                tasks = [self._duckduckgo_html(session, query) for query in queries]
-                nested = await asyncio.gather(*tasks, return_exceptions=True)
-
-            results: list[SearchResult] = []
-            seen: set[str] = set()
-            failed_queries = 0
-            for item in nested:
-                if isinstance(item, Exception):
-                    failed_queries += 1
-                    LOGGER.warning("DuckDuckGo query failed error=%s", item)
-                    continue
-                for result in item:
-                    if result.url not in seen:
-                        seen.add(result.url)
-                        results.append(result)
-            LOGGER.info(
-                "DuckDuckGo search complete unique_results=%s failed_queries=%s",
-                len(results),
-                failed_queries,
-            )
-            return results
-
-    async def _duckduckgo_html(self, session: aiohttp.ClientSession, query: str) -> list[SearchResult]:
-        url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
         started_at = time.perf_counter()
-        LOGGER.info("DuckDuckGo query request query=%s", query)
+        context = ResearchContext(lead=lead)
+        request_id = lead.request_id
+
+        if lead.website:
+            pages = await self.scraper.fetch_home_and_about(lead.website, company=lead.company, request_id=request_id)
+            context.homepage_url = pages[0].url if pages else lead.website
+            context.about_text = "\n\n".join(page.text for page in pages if page.text)[:15000]
+            context.errors.extend(page.error for page in pages if page.error)
+            if context.errors:
+                log_warning("Homepage scrape completed with errors", company=lead.company, step="research", request_id=request_id, scrape_errors=len(context.errors))
+        else:
+            log_warning("No website provided; skipping scrape", company=lead.company, step="research", request_id=request_id)
+
+        try:
+            context.search_results = await self._search_company_signals(lead.company, request_id)
+        except Exception as exc:  # Keep one bad search from killing the batch.
+            log_error("Search failed", company=lead.company, step="duckduckgo_search", request_id=request_id, error=exc, exc_info=True)
+            context.errors.append(f"Search failed: {exc}")
+
+        context.public_signal = self._choose_signal(lead.company, context.search_results, request_id)
+        log_info(
+            "Research complete",
+            company=lead.company,
+            step="research",
+            request_id=request_id,
+            search_results=len(context.search_results),
+            has_signal=bool(context.public_signal.source_url),
+            signal_type=context.public_signal.signal_type.value,
+            source_url=context.public_signal.source_url or "-",
+            duration_ms=log_timing(started_at),
+        )
+        return context
+
+    async def _search_company_signals(self, company: str, request_id: str) -> list[SearchResult]:
+        timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+        async with aiohttp.ClientSession(
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0"},
+        ) as session:
+            queries = [query.format(company=company) for query in SIGNAL_QUERIES]
+            tasks = [self._duckduckgo_html(session, query, company) for query in queries]
+            nested = await asyncio.gather(*tasks, return_exceptions=True)
+
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+        failed_queries = 0
+        for item in nested:
+            if isinstance(item, Exception):
+                failed_queries += 1
+                continue
+            for result in item:
+                if result.url not in seen:
+                    seen.add(result.url)
+                    results.append(result)
+        if failed_queries:
+            log_warning("Some public signal searches failed", company=company, step="duckduckgo_search", request_id=request_id, failed_queries=failed_queries)
+        log_info("Public signal search complete", company=company, step="duckduckgo_search", request_id=request_id, results=len(results), failed_queries=failed_queries)
+        return results
+
+    async def _duckduckgo_html(self, session: aiohttp.ClientSession, query: str, company: str) -> list[SearchResult]:
+        url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
         async with session.get(url) as response:
             html = await response.text(errors="ignore")
-            LOGGER.info(
-                "DuckDuckGo query response status=%s duration_ms=%s html_chars=%s",
-                response.status,
-                elapsed_ms(started_at),
-                len(html),
-            )
         soup = BeautifulSoup(html, "html.parser")
         results: list[SearchResult] = []
         for node in soup.select(".result")[: self.results_per_query]:
@@ -135,7 +121,6 @@ class DuckDuckGoResearcher:
             href = self._clean_duckduckgo_url(href)
             if href.startswith("http"):
                 results.append(SearchResult(title=title, url=href, snippet=snippet))
-        LOGGER.info("DuckDuckGo query parsed query=%s result_count=%s", query, len(results))
         return results
 
     def _clean_duckduckgo_url(self, href: str) -> str:
@@ -147,7 +132,7 @@ class DuckDuckGoResearcher:
             return f"https:{href}"
         return href
 
-    def _choose_signal(self, company: str, results: list[SearchResult]) -> PublicSignal:
+    def _choose_signal(self, company: str, results: list[SearchResult], request_id: str) -> PublicSignal:
         company_tokens = [token.lower() for token in re.findall(r"[a-zA-Z0-9]+", company) if len(token) > 2]
         best: tuple[int, SignalType, SearchResult] | None = None
         for result in results:
@@ -163,18 +148,21 @@ class DuckDuckGoResearcher:
                     best = (score, signal_type, result)
 
         if best is None:
-            LOGGER.warning("No verifiable public signal selected result_count=%s", len(results))
+            log_warning("No verifiable public signal selected", company=company, step="signal_selection", request_id=request_id, result_count=len(results))
             return PublicSignal.none()
 
         score, signal_type, result = best
         summary_source = result.snippet or result.title
         summary = f"{result.title}: {summary_source}"[:400]
-        LOGGER.info(
-            "Selected public signal signal_type=%s score=%s source_url=%s source_title=%s",
-            signal_type.value,
-            score,
-            result.url,
-            result.title[:160],
+        log_info(
+            "Selected public signal",
+            company=company,
+            step="signal_selection",
+            request_id=request_id,
+            signal_type=signal_type.value,
+            score=score,
+            source_url=result.url,
+            source_title=result.title[:160],
         )
         return PublicSignal(
             summary=summary,

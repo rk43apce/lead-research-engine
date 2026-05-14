@@ -20,6 +20,7 @@ class SignalType(str, Enum):
 class Lead:
     company: str
     website: str | None = None
+    request_id: str = ""
 
 
 @dataclass

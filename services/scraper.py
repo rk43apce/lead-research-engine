@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from collections.abc import Iterable
 from urllib.parse import urljoin, urlparse
@@ -10,9 +9,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from services.models import PageContent
-from services.logger import elapsed_ms, log_context, log_step
-
-LOGGER = logging.getLogger(__name__)
+from services.logger import log_error, log_info, log_timing, log_warning
 
 DEFAULT_HEADERS = {
     "User-Agent": (
@@ -46,28 +43,28 @@ class AsyncScraper:
         self.max_retries = max_retries
         self.max_chars = max_chars
 
-    async def fetch(self, session: aiohttp.ClientSession, url: str) -> PageContent:
+    async def fetch(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        company: str = "",
+        request_id: str = "",
+    ) -> PageContent:
         normalized = normalize_url(url)
         for attempt in range(1, self.max_retries + 2):
             started_at = time.perf_counter()
-            LOGGER.info("HTTP request url=%s attempt=%s max_attempts=%s", normalized, attempt, self.max_retries + 1)
             try:
                 async with session.get(normalized, allow_redirects=True) as response:
                     content_type = response.headers.get("content-type", "")
-                    LOGGER.info(
-                        "HTTP response url=%s final_url=%s status=%s content_type=%s duration_ms=%s",
-                        normalized,
-                        response.url,
-                        response.status,
-                        content_type.split(";")[0],
-                        elapsed_ms(started_at),
-                    )
                     if "text/html" not in content_type and response.status < 400:
-                        LOGGER.warning(
-                            "Unsupported content type url=%s status=%s content_type=%s",
-                            response.url,
-                            response.status,
-                            content_type,
+                        log_warning(
+                            "Unsupported content type",
+                            company=company,
+                            step="scrape",
+                            request_id=request_id,
+                            url=response.url,
+                            status=response.status,
+                            content_type=content_type,
                         )
                         return PageContent(
                             url=str(response.url),
@@ -78,21 +75,17 @@ class AsyncScraper:
                     return self._parse_html(str(response.url), html, response.status)
             except (aiohttp.ClientError, TimeoutError, asyncio.TimeoutError) as exc:
                 if attempt > self.max_retries:
-                    LOGGER.exception(
-                        "HTTP request failed url=%s attempt=%s duration_ms=%s error=%s",
-                        normalized,
-                        attempt,
-                        elapsed_ms(started_at),
-                        exc,
+                    log_error(
+                        "HTTP request failed",
+                        company=company,
+                        step="scrape",
+                        request_id=request_id,
+                        url=normalized,
+                        attempt=attempt,
+                        duration_ms=log_timing(started_at),
+                        error=exc,
                     )
                     return PageContent(url=normalized, error=str(exc))
-                LOGGER.warning(
-                    "HTTP request retry url=%s attempt=%s duration_ms=%s error=%s",
-                    normalized,
-                    attempt,
-                    elapsed_ms(started_at),
-                    exc,
-                )
                 await asyncio.sleep(0.4 * attempt)
         return PageContent(url=normalized, error="Unknown fetch failure")
 
@@ -101,24 +94,28 @@ class AsyncScraper:
         async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, timeout=timeout) as session:
             return await asyncio.gather(*(self.fetch(session, url) for url in urls))
 
-    async def fetch_home_and_about(self, website: str) -> list[PageContent]:
-        with log_context(step="scrape"):
-            with log_step(LOGGER, "scrape", "fetch homepage and about pages", website=website):
-                homepage = normalize_url(website)
-                timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-                async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, timeout=timeout) as session:
-                    home = await self.fetch(session, homepage)
-                    candidate_urls = self._about_candidates(home)
-                    LOGGER.info("About page candidates count=%s urls=%s", len(candidate_urls[:3]), candidate_urls[:3])
-                    about_pages = await asyncio.gather(*(self.fetch(session, url) for url in candidate_urls[:3]))
-                    pages = [home, *about_pages]
-                    LOGGER.info(
-                        "Scrape complete page_count=%s successful_pages=%s total_text_chars=%s",
-                        len(pages),
-                        sum(1 for page in pages if page.text),
-                        sum(len(page.text) for page in pages),
-                    )
-                    return pages
+    async def fetch_home_and_about(self, website: str, company: str = "", request_id: str = "") -> list[PageContent]:
+        started_at = time.perf_counter()
+        homepage = normalize_url(website)
+        timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+        async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, timeout=timeout) as session:
+            home = await self.fetch(session, homepage, company=company, request_id=request_id)
+            candidate_urls = self._about_candidates(home)
+            about_pages = await asyncio.gather(
+                *(self.fetch(session, url, company=company, request_id=request_id) for url in candidate_urls[:3])
+            )
+            pages = [home, *about_pages]
+            log_info(
+                "Scrape complete",
+                company=company,
+                step="scrape",
+                request_id=request_id,
+                page_count=len(pages),
+                successful_pages=sum(1 for page in pages if page.text),
+                total_text_chars=sum(len(page.text) for page in pages),
+                duration_ms=log_timing(started_at),
+            )
+            return pages
 
     def _parse_html(self, url: str, html: str, status_code: int) -> PageContent:
         soup = BeautifulSoup(html, "html.parser")
@@ -126,14 +123,6 @@ class AsyncScraper:
             tag.decompose()
         title = soup.title.get_text(" ", strip=True) if soup.title else ""
         text = " ".join(soup.get_text(" ", strip=True).split())
-        LOGGER.info(
-            "Parsed HTML url=%s status=%s title=%s extracted_chars=%s",
-            url,
-            status_code,
-            title[:120],
-            min(len(text), self.max_chars),
-        )
-        LOGGER.debug("Extracted content preview url=%s preview=%s", url, text[:160])
         return PageContent(url=url, title=title, text=text[: self.max_chars], status_code=status_code)
 
     def _about_candidates(self, page: PageContent) -> list[str]:

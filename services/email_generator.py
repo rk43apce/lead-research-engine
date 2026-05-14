@@ -1,76 +1,138 @@
-from __future__ import annotations
-
-import logging
+import time
 
 from services.llm import GeminiClient
+from services.logger import log_error, log_info, log_timing, log_warning
 from services.models import EmailDraft, LLMResearchOutput, ResearchContext
 from services.prompts import email_prompt, research_prompt
-from services.logger import log_step
-
-LOGGER = logging.getLogger(__name__)
 
 
 class LeadContentGenerator:
+    """Turns researched company context into LLM-generated output.
+
+    This class has one job: ask Gemini for a classification and an email draft.
+    If Gemini fails, it returns a safe fallback so the CSV pipeline can continue.
+    """
+
     def __init__(self, llm: GeminiClient) -> None:
         self.llm = llm
 
     async def classify_context(self, context: ResearchContext) -> LLMResearchOutput:
-        with log_step(LOGGER, "llm_classification", "classify research context"):
-            try:
-                data = await self.llm.generate_json(research_prompt(context), operation="gemini_classification")
-                services = data.get("services", [])
-                if not isinstance(services, list):
-                    LOGGER.warning("Classification validation warning field=services reason=not_list")
-                    services = []
-                output = LLMResearchOutput(
-                    institution_type=str(data.get("institution_type") or "Unknown financial institution"),
-                    customer_segment=str(data.get("customer_segment") or "Unknown"),
-                    services=[str(item) for item in services[:8]],
-                    fraud_angle=str(data.get("fraud_angle") or LLMResearchOutput.fallback().fraud_angle),
-                )
-                LOGGER.info(
-                    "Classification parsed institution_type=%s customer_segment=%s service_count=%s fraud_angle_chars=%s",
-                    output.institution_type,
-                    output.customer_segment,
-                    len(output.services),
-                    len(output.fraud_angle),
-                )
-                return output
-            except Exception as exc:
-                LOGGER.exception("LLM classification failed error=%s", exc)
-                return LLMResearchOutput.fallback()
+        company = context.lead.company
+        request_id = context.lead.request_id
+        started_at = time.perf_counter()
+
+        try:
+            # Gemini only receives grounded context prepared by the research layer.
+            prompt = research_prompt(context)
+            data = await self.llm.generate_json(
+                prompt,
+                operation="gemini_classification",
+                company=company,
+                request_id=request_id,
+            )
+
+            institution_type = str(data.get("institution_type") or "Unknown financial institution")
+            customer_segment = str(data.get("customer_segment") or "Unknown")
+            services = data.get("services") or []
+            fraud_angle = str(data.get("fraud_angle") or LLMResearchOutput.fallback().fraud_angle)
+
+            if not isinstance(services, list):
+                services = []
+
+            result = LLMResearchOutput(
+                institution_type=institution_type,
+                customer_segment=customer_segment,
+                services=[str(service) for service in services[:8]],
+                fraud_angle=fraud_angle,
+            )
+
+            log_info(
+                "Classification completed",
+                company=company,
+                step="llm_classification",
+                request_id=request_id,
+                duration_ms=log_timing(started_at),
+                fallback_used=False,
+            )
+            return result
+
+        except Exception as exc:
+            log_error(
+                "Classification failed",
+                company=company,
+                step="llm_classification",
+                request_id=request_id,
+                duration_ms=log_timing(started_at),
+                error=exc,
+            )
+            log_warning("Classification fallback used", company=company, step="llm_classification", request_id=request_id)
+            return LLMResearchOutput.fallback()
 
     async def generate_email(
         self,
         context: ResearchContext,
         classification: LLMResearchOutput,
     ) -> EmailDraft:
-        with log_step(LOGGER, "llm_email_generation", "generate email draft"):
-            try:
-                data = await self.llm.generate_json(
-                    email_prompt(context, classification.institution_type, classification.fraud_angle),
-                    operation="gemini_email_generation",
-                )
-                email = str(data.get("email") or "")
-                LOGGER.info("Email draft generated word_count=%s chars=%s", len(email.split()), len(email))
-                LOGGER.debug("Email draft preview=%s", email[:300])
-                return EmailDraft(email=email)
-            except Exception as exc:
-                LOGGER.exception("LLM email generation failed error=%s", exc)
-                fallback = self._fallback_email(context, classification)
-                LOGGER.warning("Fallback email generated word_count=%s", len(fallback.split()))
-                return EmailDraft(email=fallback, warnings=[str(exc)])
+        company = context.lead.company
+        request_id = context.lead.request_id
+        started_at = time.perf_counter()
+
+        try:
+            # The prompt includes whether a source-backed signal exists.
+            # This helps avoid unsupported "recent news" claims.
+            prompt = email_prompt(context, classification.institution_type, classification.fraud_angle)
+            data = await self.llm.generate_json(
+                prompt,
+                operation="gemini_email_generation",
+                company=company,
+                request_id=request_id,
+            )
+            email = str(data.get("email") or "")
+
+            log_info(
+                "Email generation completed",
+                company=company,
+                step="llm_email_generation",
+                request_id=request_id,
+                duration_ms=log_timing(started_at),
+                word_count=len(email.split()),
+                fallback_used=False,
+            )
+            return EmailDraft(email=email)
+
+        except Exception as exc:
+            log_error(
+                "Email generation failed",
+                company=company,
+                step="llm_email_generation",
+                request_id=request_id,
+                duration_ms=log_timing(started_at),
+                error=exc,
+            )
+
+            # Fallback exists so one LLM failure does not break the full batch.
+            fallback_email = self._fallback_email(context, classification)
+            log_warning(
+                "Email fallback used",
+                company=company,
+                step="llm_email_generation",
+                request_id=request_id,
+                word_count=len(fallback_email.split()),
+                fallback_used=True,
+            )
+            return EmailDraft(email=fallback_email, warnings=[str(exc)])
 
     def _fallback_email(self, context: ResearchContext, classification: LLMResearchOutput) -> str:
         company = context.lead.company
-        if context.public_signal.source_url:
-            opener = f"I saw this recent public signal for {company}: {context.public_signal.summary[:180]}"
+        signal = context.public_signal
+
+        if signal.source_url:
+            opener = "I saw a public signal for %s related to %s." % (company, signal.signal_type.value)
         else:
-            opener = f"I could not find a recent public signal for {company}, so I will keep this general."
+            opener = "I could not find a recent verifiable public signal for %s, so I will keep this general." % company
+
         return (
-            f"{opener}\n\n"
-            f"For {classification.institution_type}, fraud and risk teams often need more signal without adding "
-            "PII exposure or replacing existing workflows. The PreCogs helps augment analysts with AI-driven "
-            "fraud prevention context while keeping the review process controlled.\n\n"
-            "Would a brief note on where this could fit be useful?"
-        )
+            "%s Fraud and risk teams often need more review coverage without adding PII exposure "
+            "or replacing existing workflows. The PreCogs helps augment analysts with AI-driven "
+            "fraud prevention context while keeping teams in control. Would a brief note on fit be useful?"
+        ) % opener
