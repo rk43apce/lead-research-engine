@@ -11,9 +11,6 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 def configure_logging(level: str = "INFO", log_file: str = "logs/app.log") -> None:
     """Configure rotating file logs.
-
-    This keeps logging easy to explain in an interview:
-    one formatter and one rotating file handler.
     """
     log_level = getattr(logging, level.upper(), logging.INFO)
     root_logger = logging.getLogger()
