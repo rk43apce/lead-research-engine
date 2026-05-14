@@ -1,0 +1,16 @@
+.env
+.DS_Store
+.venv/
+venv/
+env/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+logs/
+output/*.csv
+!output/example_enriched_leads.csv
+docs/
