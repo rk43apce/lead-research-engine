@@ -6,16 +6,16 @@ from services.config import Settings
 from services.email_generator import LeadContentGenerator
 from services.lead import load_leads
 from services.llm import GeminiClient
-from services.logger import log_error, log_info, log_timing
+from services.logger import log_error, log_timing
 from services.models import EnrichedLead, Lead
-from services.researcher import DuckDuckGoResearcher
+from services.researcher import CompanyResearcher
 from services.scraper import AsyncScraper
 from services.validator import LeadValidator
 
 
 async def process_lead(
     lead: Lead,
-    researcher: DuckDuckGoResearcher,
+    researcher: CompanyResearcher,
     generator: LeadContentGenerator,
     validator: LeadValidator,
     semaphore: asyncio.Semaphore,
@@ -23,10 +23,7 @@ async def process_lead(
     """Process one company from research to validated email output."""
     async with semaphore:
         company = lead.company
-        request_id = lead.request_id
         started_at = time.perf_counter()
-
-        log_info("Starting company processing", company=company, step="company_processing", request_id=request_id, website=lead.website)
 
         try:
             # Step 1: collect grounded public context and source-backed signal.
@@ -39,20 +36,8 @@ async def process_lead(
             draft = await generator.generate_email(context, classification)
 
             # Step 4: validate the email and signal before writing CSV output.
-            draft = validator.validate_email(draft, context.public_signal, company=company, request_id=request_id)
-            signal_warnings = validator.validate_signal(context.public_signal, company=company, request_id=request_id)
-
-            warnings = context.errors + signal_warnings + draft.warnings
-
-            log_info(
-                "Finished company processing",
-                company=company,
-                step="company_processing",
-                request_id=request_id,
-                duration_ms=log_timing(started_at),
-                warnings=len(warnings),
-                has_signal=bool(context.public_signal.source_url),
-            )
+            draft = validator.validate_email(draft, context.public_signal, company=company)
+            validator.validate_signal(context.public_signal, company=company)
 
             return EnrichedLead(
                 company=lead.company,
@@ -68,7 +53,6 @@ async def process_lead(
                 "Company processing failed",
                 company=company,
                 step="company_processing",
-                request_id=request_id,
                 duration_ms=log_timing(started_at),
                 error=exc,
             )
@@ -88,11 +72,7 @@ async def run_pipeline(settings: Settings, input_path: Path):
 
     # Services are created once and shared across all lead tasks.
     scraper = AsyncScraper(timeout_seconds=settings.request_timeout_seconds)
-    researcher = DuckDuckGoResearcher(
-        scraper=scraper,
-        timeout_seconds=settings.request_timeout_seconds,
-        results_per_query=settings.search_results_per_query,
-    )
+    researcher = CompanyResearcher(scraper=scraper)
     llm = GeminiClient(
         api_key=settings.gemini_api_key,
         model=settings.gemini_model,

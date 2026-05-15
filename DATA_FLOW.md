@@ -17,7 +17,6 @@ This document explains how data moves through the AI lead research and cold emai
 │ - reads CSV                │
 │ - validates company column │
 │ - creates Lead objects     │
-│ - assigns request_id       │
 └─────────┬──────────────────┘
           │
           v
@@ -32,7 +31,6 @@ This document explains how data moves through the AI lead research and cold emai
 ┌────────────────────────────┐
 │ process_lead()             │
 │ One company at a time      │
-│ tracked by request_id      │
 └─────────┬──────────────────┘
           │
           v
@@ -41,22 +39,19 @@ This document explains how data moves through the AI lead research and cold emai
 │ research(lead)             │
 └─────────┬──────────────────┘
           │
-          ├─────────────────────────────┐
-          │                             │
-          v                             v
-┌──────────────────────┐      ┌────────────────────────┐
-│ scraper.py           │      │ DuckDuckGo Search       │
-│ fetch homepage/about │      │ fraud/risk signals      │
-│ extract page text    │      │ partnerships/payments   │
-└─────────┬────────────┘      └───────────┬────────────┘
-          │                               │
-          └───────────────┬───────────────┘
-                          v
+          │
+          v
+┌──────────────────────┐
+│ scraper.py           │
+│ fetch landing page   │
+│ extract page text    │
+└─────────┬────────────┘
+          │
+          v
               ┌──────────────────────┐
               │ ResearchContext       │
               │ - lead                │
               │ - about_text          │
-              │ - search_results      │
               │ - public_signal       │
               │ - errors              │
               └──────────┬───────────┘
@@ -137,8 +132,8 @@ This document explains how data moves through the AI lead research and cold emai
 
 ```text
 CSV
- → Lead objects with request_id
- → Research company website + DuckDuckGo
+ → Lead objects
+ → Scrape landing page from CSV website URL
  → Build grounded ResearchContext
  → Gemini classifies company
  → Gemini writes email
@@ -150,20 +145,19 @@ CSV
 
 1. `main.py` reads `input/leads.csv`.
 2. Each valid row becomes a `Lead`.
-3. Each `Lead` gets a `request_id` for log tracking.
-4. `run_pipeline()` creates reusable services.
-5. `process_lead()` handles each company asynchronously.
-6. `researcher.py` coordinates website scraping and DuckDuckGo search.
-7. `scraper.py` fetches homepage/about page text.
-8. DuckDuckGo search finds public fraud/risk/payment/compliance signals.
-9. The selected signal is stored in `ResearchContext`.
-10. `email_generator.py` sends grounded context to Gemini.
-11. `llm.py` calls Gemini and returns parsed JSON.
-12. Gemini classification becomes `LLMResearchOutput`.
-13. Gemini email generation becomes `EmailDraft`.
-14. `validator.py` checks the email and signal.
-15. The final result becomes `EnrichedLead`.
-16. `main.py` writes `output/enriched_leads.csv`.
+3. `run_pipeline()` creates reusable services.
+4. `process_lead()` handles each company asynchronously.
+5. `researcher.py` coordinates landing page scraping.
+6. `scraper.py` fetches the landing page text.
+7. The landing page text is stored in `ResearchContext`.
+8. Since no search engine is used, `public_signal` safely remains `PublicSignal.none()`.
+9. `email_generator.py` sends grounded context to Gemini.
+10. `llm.py` calls Gemini and returns parsed JSON.
+11. Gemini classification becomes `LLMResearchOutput`.
+12. Gemini email generation becomes `EmailDraft`.
+13. `validator.py` checks the email and signal.
+14. The final result becomes `EnrichedLead`.
+15. `main.py` writes `output/enriched_leads.csv`.
 
 ## Logging Flow
 
@@ -171,20 +165,19 @@ Every important step logs:
 
 ```text
 company=<company name>
-request_id=<lead request id>
 step=<pipeline step>
 ```
 
 Example:
 
 ```text
-company=Navy Federal Credit Union | step=research | request_id=ba83eae40618 | Research complete
+company=Navy Federal Credit Union | step=research | Research complete
 ```
 
 To debug one lead, search the log file for:
 
 ```text
-request_id=<id>
+company=<company name>
 ```
 
 That shows the full flow for that lead from start to finish.

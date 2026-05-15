@@ -1,41 +1,13 @@
 import asyncio
-import time
-from pathlib import Path
-from typing import List
-
-import pandas as pd
-
-try:
-    from dotenv import load_dotenv
-except ModuleNotFoundError:
-    def load_dotenv() -> bool:
-        return False
 
 from services.config import Settings
-from services.logger import configure_logging, log_info, log_timing
-from services.models import EnrichedLead
+from services.logger import configure_logging, log_info
+from services.output import write_output
 from services.pipeline import run_pipeline
-
-
-def write_output(path: Path, rows: List[EnrichedLead]):
-    """Write the final enriched CSV."""
-    started_at = time.perf_counter()
-    log_info("Writing output CSV", step="output_write", path=path, row_count=len(rows))
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    output_rows = []
-    for row in rows:
-        output_rows.append(row.to_csv_row())
-
-    pd.DataFrame(output_rows).to_csv(path, index=False)
-
-    log_info("Output CSV written", step="output_write", path=path, processed_count=len(rows), duration_ms=log_timing(started_at))
 
 
 def main() -> None:
     # 1. Load environment variables and app settings.
-    load_dotenv()
     settings = Settings.from_env()
 
     # breakpoint()  # debugger stops here
@@ -47,7 +19,6 @@ def main() -> None:
     configure_logging(settings.log_level, log_file=settings.log_file)
 
     print("AI lead research pipeline is running...")
-    print("Detailed logs: %s" % settings.log_file)
 
     if not settings.gemini_api_key:
         log_info("GEMINI_API_KEY is not set. LLM fields will use conservative fallbacks.", step="startup")

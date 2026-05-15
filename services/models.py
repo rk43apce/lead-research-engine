@@ -19,7 +19,6 @@ class SignalType(str, Enum):
 class Lead:
     company: str
     website: Optional[str] = None
-    request_id: str = ""
 
 
 # PageContent = one scraped website page after HTML is cleaned into readable text.
@@ -30,14 +29,6 @@ class PageContent:
     text: str = ""
     status_code: Optional[int] = None
     error: Optional[str] = None
-
-
-# SearchResult = one DuckDuckGo result before we decide whether it is useful.
-@dataclass
-class SearchResult:
-    title: str
-    url: str
-    snippet: str = ""
 
 
 # PublicSignal = the one source-backed public signal selected for outreach.
@@ -66,7 +57,6 @@ class ResearchContext:
     lead: Lead
     homepage_url: Optional[str] = None
     about_text: str = ""
-    search_results: List[SearchResult] = field(default_factory=list)
     public_signal: PublicSignal = field(default_factory=PublicSignal.none)
     errors: List[str] = field(default_factory=list)
 

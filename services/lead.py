@@ -1,18 +1,14 @@
-import time
-import uuid
 from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
 
-from services.logger import log_error, log_info, log_timing, log_warning
+from services.logger import log_error, log_warning
 from services.models import Lead
 
 
 def load_leads(path: Path, limit: Optional[int] = None):
     """Read the input CSV and convert each valid row into a Lead object."""
-    started_at = time.perf_counter()
-
     if not path.exists():
         log_error("Input CSV missing", step="csv_processing", path=path)
         raise FileNotFoundError("Input CSV not found: %s" % path)
@@ -38,14 +34,6 @@ def load_leads(path: Path, limit: Optional[int] = None):
             log_warning("Invalid CSV row skipped", step="csv_processing", row_number=index, reason="missing_company")
             continue
 
-        request_id = str(uuid.uuid4())
-        leads.append(Lead(company=company, website=website, request_id=request_id))
+        leads.append(Lead(company=company, website=website))
 
-    log_info(
-        "Finished loading leads",
-        step="csv_processing",
-        valid_count=len(leads),
-        invalid_count=invalid_rows,
-        duration_ms=log_timing(started_at),
-    )
     return leads

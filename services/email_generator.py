@@ -18,17 +18,24 @@ class LeadContentGenerator:
 
     async def classify_context(self, context: ResearchContext) -> LLMResearchOutput:
         company = context.lead.company
-        request_id = context.lead.request_id
         started_at = time.perf_counter()
 
         try:
             # Gemini only receives grounded context prepared by the research layer.
             prompt = research_prompt(context)
+            log_info(
+                "Gemini classification input prepared",
+                company=company,
+                step="llm_input",
+                homepage_url=context.homepage_url or "-",
+                scraped_text_chars=len(context.about_text),
+                prompt_chars=len(prompt),
+                has_signal=bool(context.public_signal.source_url),
+            )
             data = await self.llm.generate_json(
                 prompt,
                 operation="gemini_classification",
                 company=company,
-                request_id=request_id,
             )
 
             institution_type = str(data.get("institution_type") or "Unknown financial institution")
@@ -46,14 +53,6 @@ class LeadContentGenerator:
                 fraud_angle=fraud_angle,
             )
 
-            log_info(
-                "Classification completed",
-                company=company,
-                step="llm_classification",
-                request_id=request_id,
-                duration_ms=log_timing(started_at),
-                fallback_used=False,
-            )
             return result
 
         except Exception as exc:
@@ -61,11 +60,10 @@ class LeadContentGenerator:
                 "Classification failed",
                 company=company,
                 step="llm_classification",
-                request_id=request_id,
                 duration_ms=log_timing(started_at),
                 error=exc,
             )
-            log_warning("Classification fallback used", company=company, step="llm_classification", request_id=request_id)
+            log_warning("Classification fallback used", company=company, step="llm_classification")
             return LLMResearchOutput.fallback()
 
     async def generate_email(
@@ -74,30 +72,28 @@ class LeadContentGenerator:
         classification: LLMResearchOutput,
     ) -> EmailDraft:
         company = context.lead.company
-        request_id = context.lead.request_id
         started_at = time.perf_counter()
 
         try:
             # The prompt includes whether a source-backed signal exists.
             # This helps avoid unsupported "recent news" claims.
             prompt = email_prompt(context, classification.institution_type, classification.fraud_angle)
+            log_info(
+                "Gemini email input prepared",
+                company=company,
+                step="llm_input",
+                institution_type=classification.institution_type,
+                fraud_angle=classification.fraud_angle,
+                prompt_chars=len(prompt),
+                has_signal=bool(context.public_signal.source_url),
+            )
             data = await self.llm.generate_json(
                 prompt,
                 operation="gemini_email_generation",
                 company=company,
-                request_id=request_id,
             )
             email = str(data.get("email") or "")
 
-            log_info(
-                "Email generation completed",
-                company=company,
-                step="llm_email_generation",
-                request_id=request_id,
-                duration_ms=log_timing(started_at),
-                word_count=len(email.split()),
-                fallback_used=False,
-            )
             return EmailDraft(email=email)
 
         except Exception as exc:
@@ -105,7 +101,6 @@ class LeadContentGenerator:
                 "Email generation failed",
                 company=company,
                 step="llm_email_generation",
-                request_id=request_id,
                 duration_ms=log_timing(started_at),
                 error=exc,
             )
@@ -116,7 +111,6 @@ class LeadContentGenerator:
                 "Email fallback used",
                 company=company,
                 step="llm_email_generation",
-                request_id=request_id,
                 word_count=len(fallback_email.split()),
                 fallback_used=True,
             )

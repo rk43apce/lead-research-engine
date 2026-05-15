@@ -1,4 +1,4 @@
-from services.logger import log_info, log_warning
+from services.logger import log_warning
 from services.models import EmailDraft, PublicSignal
 
 
@@ -6,7 +6,7 @@ MAX_EMAIL_WORDS = 120
 
 
 class LeadValidator:
-    def validate_signal(self, signal: PublicSignal, company: str = "", request_id: str = ""):
+    def validate_signal(self, signal: PublicSignal, company: str = ""):
         warnings = []
 
         # A signal is only useful if the source URL can be opened and verified.
@@ -18,7 +18,6 @@ class LeadValidator:
                     "Signal validation failed",
                     company=company,
                     step="signal_validation",
-                    request_id=request_id,
                     reason="invalid_url",
                 )
 
@@ -30,13 +29,12 @@ class LeadValidator:
                     "Signal validation failed",
                     company=company,
                     step="signal_validation",
-                    request_id=request_id,
                     reason="missing_summary",
                 )
 
         return warnings
 
-    def validate_email(self, draft: EmailDraft, signal: PublicSignal, company: str = "", request_id: str = "") -> EmailDraft:
+    def validate_email(self, draft: EmailDraft, signal: PublicSignal, company: str = "") -> EmailDraft:
         # Step 1: keep any warnings already created by the email generator.
         warnings = list(draft.warnings)
 
@@ -54,7 +52,6 @@ class LeadValidator:
                 "Email trimmed",
                 company=company,
                 step="email_validation",
-                request_id=request_id,
                 original_word_count=word_count,
             )
 
@@ -71,7 +68,6 @@ class LeadValidator:
                 "Unsupported recent signal claim",
                 company=company,
                 step="email_validation",
-                request_id=request_id,
             )
             email = (
                 "I could not find a recent verifiable public signal, so I will keep this general. "
@@ -92,18 +88,8 @@ class LeadValidator:
                 "Missing no-PII angle",
                 company=company,
                 step="email_validation",
-                request_id=request_id,
             )
 
-        # Step 8: return the cleaned email and all validation warnings.
-        log_info(
-            "Email validation completed",
-            company=company,
-            step="email_validation",
-            request_id=request_id,
-            word_count=len(email.split()),
-            warnings=len(warnings),
-        )
         return EmailDraft(email=email, warnings=warnings)
 
     def _normalize_whitespace(self, value: str) -> str:

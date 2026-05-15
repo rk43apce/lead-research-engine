@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from services.logger import log_info, log_timing
+from services.logger import log_info, log_timing, log_warning
 
 
 class GeminiClient:
@@ -28,15 +28,15 @@ class GeminiClient:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
 
-    async def generate_json(self, prompt, operation="gemini_generate", company=None, request_id=None):
+    async def generate_json(self, prompt, operation="gemini_generate", company=None):
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
 
         # requests is blocking, so we run it in a worker thread.
         # This keeps the async pipeline responsive while Gemini is called.
-        return await asyncio.to_thread(self._generate_json_sync, prompt, operation, company, request_id)
+        return await asyncio.to_thread(self._generate_json_sync, prompt, operation, company)
 
-    def _generate_json_sync(self, prompt: str, operation: str, company, request_id) -> Dict[str, Any]:
+    def _generate_json_sync(self, prompt: str, operation: str, company) -> Dict[str, Any]:
         url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % self.model
         headers = {
             "Content-Type": "application/json",
@@ -60,16 +60,6 @@ class GeminiClient:
             started_at = time.perf_counter()
 
             try:
-                log_info(
-                    "Gemini request started",
-                    company=company,
-                    step=operation,
-                    request_id=request_id,
-                    model=self.model,
-                    prompt_chars=len(prompt),
-                    attempt=attempt,
-                )
-
                 # Do not log the full prompt or response. Prompts can contain
                 # scraped text, and responses can contain generated email copy.
                 response = requests.post(url, headers=headers, json=body, timeout=self.timeout_seconds)
@@ -79,10 +69,16 @@ class GeminiClient:
                     "Gemini response received",
                     company=company,
                     step=operation,
-                    request_id=request_id,
                     status=response.status_code,
                     duration_ms=duration_ms,
                 )
+
+                if response.status_code == 200:
+                    print("Gemini OK: %s for %s" % (operation, company or "company"))
+                elif response.status_code == 429:
+                    print("Gemini rate limit: 429 for %s" % (company or "company"))
+                else:
+                    print("Gemini API status %s for %s" % (response.status_code, company or "company"))
 
                 response.raise_for_status()
                 response_body = response.json()
@@ -95,6 +91,13 @@ class GeminiClient:
 
             except Exception as exc:
                 last_error = exc
+                log_warning(
+                    "Gemini request failed",
+                    company=company,
+                    step=operation,
+                    attempt=attempt,
+                    error=self._safe_error(exc),
+                )
 
         raise RuntimeError("Gemini request failed: %s" % last_error)
 
