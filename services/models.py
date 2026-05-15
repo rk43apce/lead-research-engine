@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 
 class SignalType(str, Enum):
@@ -16,22 +14,25 @@ class SignalType(str, Enum):
     NONE = "none"
 
 
+# Lead = one valid input row from the CSV.
 @dataclass
 class Lead:
     company: str
-    website: str | None = None
+    website: Optional[str] = None
     request_id: str = ""
 
 
+# PageContent = one scraped website page after HTML is cleaned into readable text.
 @dataclass
 class PageContent:
     url: str
     title: str = ""
     text: str = ""
-    status_code: int | None = None
-    error: str | None = None
+    status_code: Optional[int] = None
+    error: Optional[str] = None
 
 
+# SearchResult = one DuckDuckGo result before we decide whether it is useful.
 @dataclass
 class SearchResult:
     title: str
@@ -39,6 +40,7 @@ class SearchResult:
     snippet: str = ""
 
 
+# PublicSignal = the one source-backed public signal selected for outreach.
 @dataclass
 class PublicSignal:
     summary: str
@@ -48,7 +50,8 @@ class PublicSignal:
     confidence: float = 0.0
 
     @classmethod
-    def none(cls) -> "PublicSignal":
+    def none(cls):
+        # Means no verified public source was found. We use this instead of guessing.
         return cls(
             summary="No recent verifiable public signal found.",
             source_url="",
@@ -57,25 +60,28 @@ class PublicSignal:
         )
 
 
+# ResearchContext = all factual context collected for one company.
 @dataclass
 class ResearchContext:
     lead: Lead
-    homepage_url: str | None = None
+    homepage_url: Optional[str] = None
     about_text: str = ""
-    search_results: list[SearchResult] = field(default_factory=list)
+    search_results: List[SearchResult] = field(default_factory=list)
     public_signal: PublicSignal = field(default_factory=PublicSignal.none)
-    errors: list[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
 
 
+# LLMResearchOutput = company classification returned by Gemini.
 @dataclass
 class LLMResearchOutput:
     institution_type: str
     customer_segment: str
-    services: list[str]
+    services: List[str]
     fraud_angle: str
 
     @classmethod
-    def fallback(cls) -> "LLMResearchOutput":
+    def fallback(cls):
+        # Means Gemini failed or the grounded context was not enough to classify safely.
         return cls(
             institution_type="Unknown financial institution",
             customer_segment="Unknown",
@@ -84,12 +90,14 @@ class LLMResearchOutput:
         )
 
 
+# EmailDraft = generated email plus any warnings from fallback or validation.
 @dataclass
 class EmailDraft:
     email: str
-    warnings: list[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
 
+# EnrichedLead = final row written to the output CSV.
 @dataclass
 class EnrichedLead:
     company: str
@@ -98,9 +106,8 @@ class EnrichedLead:
     signal: str
     source_url: str
     email: str
-    warnings: list[str] = field(default_factory=list)
 
-    def to_csv_row(self) -> dict[str, Any]:
+    def to_csv_row(self) -> Dict[str, Any]:
         return {
             "company": self.company,
             "institution_type": self.institution_type,

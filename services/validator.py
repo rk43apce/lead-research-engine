@@ -1,6 +1,3 @@
-import re
-from typing import List
-
 from services.logger import log_info, log_warning
 from services.models import EmailDraft, PublicSignal
 
@@ -9,7 +6,7 @@ MAX_EMAIL_WORDS = 120
 
 
 class LeadValidator:
-    def validate_signal(self, signal: PublicSignal, company: str = "", request_id: str = "") -> List[str]:
+    def validate_signal(self, signal: PublicSignal, company: str = "", request_id: str = ""):
         warnings = []
 
         # A signal is only useful if the source URL can be opened and verified.
@@ -110,7 +107,7 @@ class LeadValidator:
         return EmailDraft(email=email, warnings=warnings)
 
     def _normalize_whitespace(self, value: str) -> str:
-        return re.sub(r"\s+", " ", value).strip()
+        return " ".join(value.split())
 
     def _trim_to_words(self, value: str, max_words: int) -> str:
         words = value.split()

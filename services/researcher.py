@@ -198,6 +198,9 @@ class DuckDuckGoResearcher:
                     if keyword in text:
                         score += 1
 
+                if score == 0:
+                    continue
+
                 # Small recency boost for recent years in titles/snippets.
                 if "2024" in text or "2025" in text or "2026" in text or "recent" in text:
                     score += 2

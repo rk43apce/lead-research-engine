@@ -61,7 +61,6 @@ async def process_lead(
                 signal=context.public_signal.summary,
                 source_url=context.public_signal.source_url,
                 email=draft.email,
-                warnings=warnings,
             )
 
         except Exception as exc:
@@ -80,7 +79,6 @@ async def process_lead(
                 signal="No signal generated because processing failed.",
                 source_url="",
                 email="",
-                warnings=[str(exc)],
             )
 
 
