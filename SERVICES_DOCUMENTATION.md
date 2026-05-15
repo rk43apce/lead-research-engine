@@ -339,13 +339,14 @@ Calls the Gemini API and returns parsed JSON.
 - sends the prompt to Gemini
 - uses low temperature for conservative output
 - asks for JSON response format
+- uses `aiohttp` for non-blocking async API calls
 - parses JSON
 - validates that the response is a dictionary
 - avoids logging full prompts or full responses
 
-### Why `asyncio.to_thread()` Is Used
+### Why `aiohttp` Is Used
 
-The project uses `requests`, which is blocking. `asyncio.to_thread()` runs that blocking request in a worker thread so the async pipeline can continue managing other lead tasks.
+The rest of the pipeline is async, so the Gemini client also uses `aiohttp`. This keeps API calls non-blocking and avoids using a worker thread for each Gemini request.
 
 ### What It Should Not Do
 

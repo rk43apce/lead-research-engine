@@ -29,7 +29,7 @@ class Settings:
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
             request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "12")),
-            max_concurrency=int(os.getenv("MAX_CONCURRENCY", "5")),
+            max_concurrency=int(os.getenv("MAX_CONCURRENCY", "2")),
             input_csv=Path(os.getenv("INPUT_CSV", "input/leads.csv")),
             output_csv=Path(os.getenv("OUTPUT_CSV", "output/enriched_leads.csv")),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
