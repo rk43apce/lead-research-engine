@@ -71,7 +71,6 @@ Output enriched CSV
 │   ├── email_generator.py
 │   ├── llm.py
 │   ├── logger.py
-│   ├── logging_config.py
 │   ├── models.py
 │   ├── prompts.py
 │   ├── researcher.py
@@ -88,12 +87,12 @@ Output enriched CSV
 
 ### `main.py`
 
-`main.py` is the command-line entrypoint.
+`main.py` is the application entrypoint.
 
 Responsibilities:
 
 - Load environment variables from `.env`
-- Parse command-line arguments
+- Load settings from `.env`
 - Read the input CSV
 - Create service objects
 - Process leads concurrently with `asyncio`
@@ -106,11 +105,7 @@ Main command:
 python main.py
 ```
 
-Optional command:
-
-```bash
-python main.py --input input/leads.csv --output output/enriched_leads.csv --limit 20
-```
+Input and output paths are configured through `.env`.
 
 ### `services/models.py`
 
@@ -259,9 +254,9 @@ SEARCH_RESULTS_PER_QUERY=5
 LOG_LEVEL=INFO
 ```
 
-### `services/logging_config.py`
+### `services/logger.py`
 
-This file centralizes logging setup.
+This file centralizes logging setup and simple logging helpers.
 
 Logs include:
 
@@ -503,17 +498,7 @@ Run:
 python main.py
 ```
 
-Run only a few leads:
-
-```bash
-python main.py --limit 3
-```
-
-Run with custom files:
-
-```bash
-python main.py --input input/leads.csv --output output/enriched_leads.csv
-```
+Input and output files are controlled with `INPUT_CSV` and `OUTPUT_CSV` in `.env`.
 
 ## Production Improvements
 

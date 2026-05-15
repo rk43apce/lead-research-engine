@@ -28,7 +28,6 @@ It is a lead research and personalization system, not a fraud detection system.
 │   ├── validator.py
 │   ├── prompts.py
 │   ├── config.py
-│   ├── logging_config.py
 │   ├── logger.py
 │   └── models.py
 ├── main.py
@@ -59,13 +58,14 @@ GEMINI_API_KEY=...
 python main.py
 ```
 
-Custom paths:
+Input and output paths are configured through `.env`:
 
-```bash
-python main.py --input input/leads.csv --output output/enriched_leads.csv
+```text
+INPUT_CSV=input/leads.csv
+OUTPUT_CSV=output/enriched_leads.csv
 ```
 
-Logs are written to the console and `logs/app.log` with per-company trace IDs and step timing. See [docs/LOGGING.md](docs/LOGGING.md) for sample logs and implementation details.
+Detailed logs are written to `logs/app.log` with per-company request IDs and step timing. The console only shows simple run status.
 
 ## Input CSV
 
