@@ -13,8 +13,8 @@ except ModuleNotFoundError:
 
 @dataclass(frozen=True)
 class Settings:
-    gemini_api_key: str | None
-    gemini_model: str
+    openai_api_key: str | None
+    openai_model: str
     request_timeout_seconds: float
     max_concurrency: int
     input_csv: Path
@@ -26,8 +26,8 @@ class Settings:
     def from_env(cls) -> "Settings":
         load_dotenv()
         return cls(
-            gemini_api_key=os.getenv("GEMINI_API_KEY"),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
             request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "12")),
             max_concurrency=int(os.getenv("MAX_CONCURRENCY", "2")),
             input_csv=Path(os.getenv("INPUT_CSV", "input/leads.csv")),

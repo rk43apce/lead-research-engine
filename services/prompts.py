@@ -24,6 +24,7 @@ Rules:
 - Use only the supplied context.
 - Do not invent services, facts, customer segments, or signals.
 - If the context is insufficient, use "Unknown" or a cautious phrase.
+- fraud_angle must not be blank or "Unknown"; provide a conservative likely fraud/risk angle based on the supplied institution type, services, and public signal.
 - Return valid JSON only.
 
 JSON schema:

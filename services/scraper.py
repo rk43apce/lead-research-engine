@@ -1,10 +1,11 @@
 import asyncio
+from urllib.parse import urldefrag, urljoin, urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup
 
 from services.logger import log_error, log_warning
-from services.models import PageContent
+from services.models import PageContent, PageLink
 
 
 DEFAULT_HEADERS = {
@@ -95,7 +96,6 @@ class AsyncScraper:
         landing_page_url = normalize_url(website)
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
 
-        # For the simplified demo flow, we only scrape the URL provided in the CSV.
         async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, timeout=timeout) as session:
             page = await self.fetch(
                 session,
@@ -104,8 +104,20 @@ class AsyncScraper:
             )
         return page
 
+    async def fetch_pages(self, urls: list[str], company: str = "", concurrency: int = 3) -> list[PageContent]:
+        timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async with aiohttp.ClientSession(headers=DEFAULT_HEADERS, timeout=timeout) as session:
+            async def fetch_one(url: str) -> PageContent:
+                async with semaphore:
+                    return await self.fetch(session, url, company=company)
+
+            return await asyncio.gather(*(fetch_one(url) for url in urls))
+
     def _parse_html(self, url: str, html: str, status_code: int) -> PageContent:
         soup = BeautifulSoup(html, "html.parser")
+        links = self._extract_links(url, soup)
 
         # Remove non-content tags so the LLM receives readable page text.
         for tag in soup(["script", "style", "noscript", "svg"]):
@@ -126,4 +138,34 @@ class AsyncScraper:
             title=title,
             text=text,
             status_code=status_code,
+            links=links,
         )
+
+    def _extract_links(self, base_url: str, soup: BeautifulSoup) -> list[PageLink]:
+        links: list[PageLink] = []
+        seen_urls = set()
+
+        for anchor in soup.find_all("a", href=True):
+            raw_href = anchor.get("href", "").strip()
+            if not raw_href:
+                continue
+
+            parsed_href = urlparse(raw_href)
+            if parsed_href.scheme in {"mailto", "tel", "javascript"}:
+                continue
+
+            absolute_url = urljoin(base_url, raw_href)
+            absolute_url = urldefrag(absolute_url).url
+            parsed_url = urlparse(absolute_url)
+
+            if parsed_url.scheme not in {"http", "https"}:
+                continue
+
+            if absolute_url in seen_urls:
+                continue
+
+            link_text = " ".join(anchor.get_text(" ", strip=True).split())
+            links.append(PageLink(url=absolute_url, text=link_text[:180]))
+            seen_urls.add(absolute_url)
+
+        return links

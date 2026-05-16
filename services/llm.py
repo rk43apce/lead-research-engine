@@ -9,17 +9,17 @@ import aiohttp
 from services.logger import log_info, log_timing, log_warning
 
 
-class GeminiClient:
-    """Small wrapper around the Gemini API.
+class OpenAIClient:
+    """Small wrapper around the OpenAI Responses API.
 
-    This class only calls Gemini and returns parsed JSON. It does not decide
+    This class only calls OpenAI and returns parsed JSON. It does not decide
     business logic, choose signals, or validate outreach quality.
     """
 
     def __init__(
         self,
         api_key: Optional[str],
-        model: str = "gemini-flash-latest",
+        model: str = "gpt-4.1-mini",
         timeout_seconds: float = 30,
         max_retries: int = 2,
     ) -> None:
@@ -28,23 +28,26 @@ class GeminiClient:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
 
-    async def generate_json(self, prompt, operation="gemini_generate", company=None):
+    async def generate_json(self, prompt, operation="openai_generate", company=None):
         if not self.api_key:
-            raise RuntimeError("GEMINI_API_KEY is not configured.")
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
 
-        url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % self.model
+        url = "https://api.openai.com/v1/responses"
         headers = {
+            "Authorization": "Bearer %s" % self.api_key,
             "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key or "",
         }
 
         body = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                # Low temperature keeps the output more consistent and conservative.
-                "temperature": 0.2,
-                # Ask Gemini for JSON so downstream code can parse it safely.
-                "response_mime_type": "application/json",
+            "model": self.model,
+            "input": prompt,
+            # Low temperature keeps the output more consistent and conservative.
+            "temperature": 0.2,
+            # Ask OpenAI for JSON so downstream code can parse it safely.
+            "text": {
+                "format": {
+                    "type": "json_object",
+                },
             },
         }
 
@@ -56,13 +59,22 @@ class GeminiClient:
             started_at = time.perf_counter()
 
             try:
-                # Do not log the full prompt or response. Prompts can contain
-                # scraped text, and responses can contain generated email copy.
+                payload_json = self._to_json(body)
+                log_info(
+                    "OpenAI request payload",
+                    company=company,
+                    step=operation,
+                    attempt=attempt,
+                    llm_payload=payload_json,
+                )
+                print("\nOpenAI request payload (%s, %s, attempt %s):" % (operation, company or "company", attempt))
+                print(payload_json)
+
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, headers=headers, json=body) as response:
                         duration_ms = log_timing(started_at)
                         log_info(
-                            "Gemini response received",
+                            "OpenAI response received",
                             company=company,
                             step=operation,
                             status=response.status,
@@ -70,20 +82,39 @@ class GeminiClient:
                         )
 
                         if response.status == 200:
-                            print("Gemini OK: %s for %s" % (operation, company or "company"))
+                            print("OpenAI OK: %s for %s" % (operation, company or "company"))
                         elif response.status == 429:
-                            print("Gemini rate limit: 429 for %s. Retrying if attempts remain." % (company or "company"))
+                            print("OpenAI rate limit: 429 for %s. Retrying if attempts remain." % (company or "company"))
                         else:
-                            print("Gemini API status %s for %s" % (response.status, company or "company"))
+                            print("OpenAI API status %s for %s" % (response.status, company or "company"))
 
                         if response.status == 429:
                             retry_after = self._retry_after_seconds(response)
-                            raise RuntimeError("Gemini rate limited with 429; retry_after=%s" % retry_after)
+                            raise RuntimeError("OpenAI rate limited with 429; retry_after=%s" % retry_after)
 
                         response.raise_for_status()
                         response_body = await response.json()
+                        response_json = self._to_json(response_body)
+                        log_info(
+                            "OpenAI raw response",
+                            company=company,
+                            step=operation,
+                            attempt=attempt,
+                            llm_response=response_json,
+                        )
+                        print("\nOpenAI raw response (%s, %s, attempt %s):" % (operation, company or "company", attempt))
+                        print(response_json)
 
-                text = response_body["candidates"][0]["content"]["parts"][0]["text"]
+                text = self._extract_text(response_body)
+                log_info(
+                    "OpenAI response text",
+                    company=company,
+                    step=operation,
+                    attempt=attempt,
+                    llm_response_text=text,
+                )
+                print("\nOpenAI response text (%s, %s, attempt %s):" % (operation, company or "company", attempt))
+                print(text)
 
                 # We parse and validate JSON because the rest of the pipeline
                 # expects a dictionary, not free-form model text.
@@ -93,7 +124,7 @@ class GeminiClient:
             except Exception as exc:
                 last_error = exc
                 log_warning(
-                    "Gemini request failed",
+                    "OpenAI request failed",
                     company=company,
                     step=operation,
                     attempt=attempt,
@@ -102,10 +133,32 @@ class GeminiClient:
 
                 if attempt < max_attempts:
                     wait_seconds = self._retry_delay_seconds(attempt, exc)
-                    print("Waiting %s seconds before retrying Gemini for %s" % (wait_seconds, company or "company"))
+                    print("Waiting %s seconds before retrying OpenAI for %s" % (wait_seconds, company or "company"))
                     await asyncio.sleep(wait_seconds)
 
-        raise RuntimeError("Gemini request failed: %s" % last_error)
+        raise RuntimeError("OpenAI request failed: %s" % last_error)
+
+    def _to_json(self, value: Any) -> str:
+        return json.dumps(value, ensure_ascii=True, indent=2)
+
+    def _extract_text(self, response_body: Dict[str, Any]) -> str:
+        output_text = response_body.get("output_text")
+        if isinstance(output_text, str) and output_text:
+            return output_text
+
+        for item in response_body.get("output", []):
+            if not isinstance(item, dict):
+                continue
+
+            for content in item.get("content", []):
+                if not isinstance(content, dict):
+                    continue
+
+                text = content.get("text")
+                if isinstance(text, str) and text:
+                    return text
+
+        raise ValueError("OpenAI response did not include output text.")
 
     def _retry_after_seconds(self, response) -> int:
         value = response.headers.get("Retry-After")
@@ -137,7 +190,7 @@ class GeminiClient:
             parsed = json.loads(match.group(0))
 
         if not isinstance(parsed, dict):
-            raise ValueError("Gemini returned JSON that is not an object.")
+            raise ValueError("OpenAI returned JSON that is not an object.")
 
         return parsed
 

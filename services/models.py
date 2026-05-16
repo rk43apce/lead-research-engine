@@ -21,6 +21,13 @@ class Lead:
     website: Optional[str] = None
 
 
+# PageLink = one normalized HTML link discovered while scraping a page.
+@dataclass
+class PageLink:
+    url: str
+    text: str = ""
+
+
 # PageContent = one scraped website page after HTML is cleaned into readable text.
 @dataclass
 class PageContent:
@@ -29,6 +36,7 @@ class PageContent:
     text: str = ""
     status_code: Optional[int] = None
     error: Optional[str] = None
+    links: List[PageLink] = field(default_factory=list)
 
 
 # PublicSignal = the one source-backed public signal selected for outreach.
@@ -61,7 +69,7 @@ class ResearchContext:
     errors: List[str] = field(default_factory=list)
 
 
-# LLMResearchOutput = company classification returned by Gemini.
+# LLMResearchOutput = company classification returned by the LLM provider.
 @dataclass
 class LLMResearchOutput:
     institution_type: str
@@ -71,7 +79,7 @@ class LLMResearchOutput:
 
     @classmethod
     def fallback(cls):
-        # Means Gemini failed or the grounded context was not enough to classify safely.
+        # Means the LLM failed or the grounded context was not enough to classify safely.
         return cls(
             institution_type="Unknown financial institution",
             customer_segment="Unknown",

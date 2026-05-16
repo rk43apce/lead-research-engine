@@ -8,6 +8,11 @@ from typing import Any, Optional
 
 LOG_FORMAT = "%(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+FULL_LOG_FIELDS = {
+    "llm_payload",
+    "llm_response",
+    "llm_response_text",
+}
 
 
 def configure_logging(level: str = "INFO", log_file: str = "logs/app.log") -> None:
@@ -108,19 +113,26 @@ def _build_message(
         log_data["step"] = _safe_value(step)
 
     for key, value in fields.items():
-        log_data[key] = _safe_value(value)
+        max_chars = 50_000 if key in FULL_LOG_FIELDS else 500
+        log_data[key] = _safe_value(value, max_chars=max_chars)
 
     return json.dumps(log_data, ensure_ascii=True)
 
 
-def _safe_value(value: Any) -> str:
+def _safe_value(value: Any, max_chars: int = 500) -> str:
     """Avoid leaking secrets or huge payloads into logs."""
     if value is None:
         return "-"
 
     text = str(value).replace("\n", " ")
 
-    if "AIza" in text or "api_key" in text.lower() or "x-goog-api-key" in text.lower():
+    if (
+        "AIza" in text
+        or "sk-" in text
+        or "api_key" in text.lower()
+        or "x-goog-api-key" in text.lower()
+        or "authorization" in text.lower()
+    ):
         return "[REDACTED]"
 
-    return text[:500]
+    return text[:max_chars]
