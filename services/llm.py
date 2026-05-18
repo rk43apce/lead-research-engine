@@ -1,6 +1,5 @@
 import json
 import re
-import asyncio
 import time
 from typing import Any, Dict, Optional
 
@@ -21,7 +20,7 @@ class OpenAIClient:
         api_key: Optional[str],
         model: str = "gpt-4.1-mini",
         timeout_seconds: float = 30,
-        max_retries: int = 2,
+        max_retries: int = 0,
     ) -> None:
         self.api_key = api_key
         self.model = model
@@ -59,16 +58,14 @@ class OpenAIClient:
             started_at = time.perf_counter()
 
             try:
-                payload_json = self._to_json(body)
                 log_info(
-                    "OpenAI request payload",
+                    "OpenAI request started",
                     company=company,
                     step=operation,
                     attempt=attempt,
-                    llm_payload=payload_json,
+                    model=self.model,
+                    prompt_chars=len(prompt),
                 )
-                print("\nOpenAI request payload (%s, %s, attempt %s):" % (operation, company or "company", attempt))
-                print(payload_json)
 
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.post(url, headers=headers, json=body) as response:
@@ -81,11 +78,9 @@ class OpenAIClient:
                             duration_ms=duration_ms,
                         )
 
-                        if response.status == 200:
-                            print("OpenAI OK: %s for %s" % (operation, company or "company"))
-                        elif response.status == 429:
+                        if response.status == 429:
                             print("OpenAI rate limit: 429 for %s. Retrying if attempts remain." % (company or "company"))
-                        else:
+                        elif response.status != 200:
                             print("OpenAI API status %s for %s" % (response.status, company or "company"))
 
                         if response.status == 429:
@@ -94,27 +89,15 @@ class OpenAIClient:
 
                         response.raise_for_status()
                         response_body = await response.json()
-                        response_json = self._to_json(response_body)
-                        log_info(
-                            "OpenAI raw response",
-                            company=company,
-                            step=operation,
-                            attempt=attempt,
-                            llm_response=response_json,
-                        )
-                        print("\nOpenAI raw response (%s, %s, attempt %s):" % (operation, company or "company", attempt))
-                        print(response_json)
 
                 text = self._extract_text(response_body)
                 log_info(
-                    "OpenAI response text",
+                    "OpenAI response parsed",
                     company=company,
                     step=operation,
                     attempt=attempt,
-                    llm_response_text=text,
+                    response_chars=len(text),
                 )
-                print("\nOpenAI response text (%s, %s, attempt %s):" % (operation, company or "company", attempt))
-                print(text)
 
                 # We parse and validate JSON because the rest of the pipeline
                 # expects a dictionary, not free-form model text.
@@ -131,15 +114,7 @@ class OpenAIClient:
                     error=self._safe_error(exc),
                 )
 
-                if attempt < max_attempts:
-                    wait_seconds = self._retry_delay_seconds(attempt, exc)
-                    print("Waiting %s seconds before retrying OpenAI for %s" % (wait_seconds, company or "company"))
-                    await asyncio.sleep(wait_seconds)
-
         raise RuntimeError("OpenAI request failed: %s" % last_error)
-
-    def _to_json(self, value: Any) -> str:
-        return json.dumps(value, ensure_ascii=True, indent=2)
 
     def _extract_text(self, response_body: Dict[str, Any]) -> str:
         output_text = response_body.get("output_text")
@@ -169,16 +144,6 @@ class OpenAIClient:
             return int(value)
         except ValueError:
             return 0
-
-    def _retry_delay_seconds(self, attempt: int, exc: Exception) -> int:
-        message = str(exc)
-        match = re.search(r"retry_after=(\d+)", message)
-        if match:
-            retry_after = int(match.group(1))
-            if retry_after > 0:
-                return min(retry_after, 30)
-
-        return min(2 ** attempt, 10)
 
     def _parse_json(self, text: str) -> Dict[str, Any]:
         try:

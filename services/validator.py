@@ -1,5 +1,5 @@
 from services.logger import log_warning
-from services.models import EmailDraft, PublicSignal
+from services.models import EmailDraft, PublicSignal, SignalType
 
 
 MAX_EMAIL_WORDS = 120
@@ -57,7 +57,7 @@ class LeadValidator:
 
         # Step 5: check for hallucination risk.
         # If no source URL exists, the email should not sound like we found recent news.
-        has_source_url = bool(signal.source_url)
+        has_source_url = bool(signal.source_url and signal.signal_type != SignalType.WEBSITE_CONTEXT)
         claims_recent_signal = self._claims_recent_signal(email)
         hallucination_risk = not has_source_url and claims_recent_signal
 

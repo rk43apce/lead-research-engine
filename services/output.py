@@ -12,6 +12,7 @@ def write_output(path: Path, rows: List[EnrichedLead]):
     """Write the final enriched leads to a CSV file."""
     started_at = time.perf_counter()
 
+    print("Writing output CSV: %s" % path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     output_rows = []

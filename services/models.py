@@ -11,6 +11,7 @@ class SignalType(str, Enum):
     EXPANSION = "expansion"
     HIRING = "hiring"
     PRESS = "press"
+    WEBSITE_CONTEXT = "website_context"
     NONE = "none"
 
 

@@ -27,6 +27,7 @@ async def process_lead(
 
         try:
             # Step 1: collect grounded public context and source-backed signal.
+            print("\nProcessing lead: %s" % company)
             context = await researcher.research(lead)
 
             # Step 2: ask OpenAI to classify the company using only grounded context.
@@ -39,6 +40,7 @@ async def process_lead(
             draft = validator.validate_email(draft, context.public_signal, company=company)
             validator.validate_signal(context.public_signal, company=company)
 
+            print("Completed lead: %s" % company)
             return EnrichedLead(
                 company=lead.company,
                 institution_type=classification.institution_type,
@@ -69,6 +71,7 @@ async def process_lead(
 async def run_pipeline(settings: Settings, input_path: Path):
     """Create the services and run all leads concurrently."""
     leads = load_leads(input_path)
+    print("Pipeline: processing %s leads with max concurrency %s" % (len(leads), settings.max_concurrency))
 
     # Services are created once and shared across all lead tasks.
     scraper = AsyncScraper(timeout_seconds=settings.request_timeout_seconds)

@@ -9,6 +9,8 @@ from services.models import Lead
 
 def load_leads(path: Path, limit: Optional[int] = None):
     """Read the input CSV and convert each valid row into a Lead object."""
+    print("Input CSV: %s" % path)
+
     if not path.exists():
         log_error("Input CSV missing", step="csv_processing", path=path)
         raise FileNotFoundError("Input CSV not found: %s" % path)
@@ -36,4 +38,5 @@ def load_leads(path: Path, limit: Optional[int] = None):
 
         leads.append(Lead(company=company, website=website))
 
+    print("Loaded leads: %s" % len(leads))
     return leads

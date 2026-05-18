@@ -51,6 +51,7 @@ class LeadContentGenerator:
                 institution_type=institution_type,
                 services=normalized_services,
             )
+            fraud_angle_source = self._fraud_angle_source(data.get("fraud_angle"))
 
             result = LLMResearchOutput(
                 institution_type=institution_type,
@@ -58,6 +59,18 @@ class LeadContentGenerator:
                 services=normalized_services,
                 fraud_angle=fraud_angle,
             )
+
+            log_info(
+                "Classification completed",
+                company=company,
+                step="llm_classification",
+                institution_type=institution_type,
+                services_count=len(normalized_services),
+                fraud_angle_source=fraud_angle_source,
+                fraud_angle=fraud_angle,
+                duration_ms=log_timing(started_at),
+            )
+            print("Classification: %s -> %s, fraud_angle=%s" % (company, institution_type, fraud_angle_source))
 
             return result
 
@@ -100,6 +113,15 @@ class LeadContentGenerator:
             )
             email = str(data.get("email") or "")
 
+            log_info(
+                "Email generation completed",
+                company=company,
+                step="llm_email_generation",
+                email_chars=len(email),
+                duration_ms=log_timing(started_at),
+            )
+            print("Email: generated for %s" % company)
+
             return EmailDraft(email=email)
 
         except Exception as exc:
@@ -126,8 +148,10 @@ class LeadContentGenerator:
         company = context.lead.company
         signal = context.public_signal
 
-        if signal.source_url:
+        if signal.source_url and signal.signal_type.value != "website_context":
             opener = "I saw a public signal for %s related to %s." % (company, signal.signal_type.value)
+        elif signal.source_url:
+            opener = "I reviewed the public website context for %s, but could not find a recent verifiable public signal." % company
         else:
             opener = "I could not find a recent verifiable public signal for %s, so I will keep this general." % company
 
@@ -149,6 +173,13 @@ class LeadContentGenerator:
             return fraud_angle
 
         return self._derive_fraud_angle(context, institution_type, services)
+
+    def _fraud_angle_source(self, value) -> str:
+        fraud_angle = str(value or "").strip()
+        if fraud_angle and fraud_angle.lower() not in {"unknown", "n/a", "none", "null", "-"}:
+            return "llm"
+
+        return "derived_fallback"
 
     def _derive_fraud_angle(
         self,

@@ -62,6 +62,8 @@ SOURCE_PAGE_BONUS = {
 }
 
 ARTICLE_URL_PATTERN = re.compile(r"/(?:20\d{2}|\d{4}/\d{1,2}|news|press|media|investor|blog|career|job)", re.I)
+MAX_SOURCE_PAGES = 2
+MAX_DETAIL_PAGES = 2
 
 
 class CompanyResearcher:
@@ -113,16 +115,16 @@ class CompanyResearcher:
             duration_ms=log_timing(started_at),
         )
 
-        if context.about_text:
-            print("Website scrape OK: extracted landing page text for %s" % company)
-        else:
-            print("Website scrape: no landing page text extracted for %s" % company)
+        print(
+            "Research: %s scraped %s chars, %s links, signal=%s"
+            % (company, len(context.about_text), len(page.links), "yes" if signal.source_url else "no")
+        )
 
         return context
 
     async def _find_public_signal(self, landing_page: PageContent, company: str) -> PublicSignal:
         candidate_links = self._rank_source_links(landing_page.links, landing_page.url)
-        candidate_urls = [link.url for link in candidate_links[:10]]
+        candidate_urls = [link.url for link in candidate_links[:MAX_SOURCE_PAGES]]
 
         if not candidate_urls:
             log_warning(
@@ -131,16 +133,10 @@ class CompanyResearcher:
                 step="signal_discovery",
                 landing_page=landing_page.url,
             )
-            best_homepage_signal = self._select_signal_page([landing_page])
-            if best_homepage_signal:
-                signal_type = self._classify_signal_type(best_homepage_signal)
-                return PublicSignal(
-                    summary=self._summarize_signal(best_homepage_signal, signal_type),
-                    source_url=best_homepage_signal.url,
-                    signal_type=signal_type,
-                    source_title=best_homepage_signal.title,
-                    confidence=0.45,
-                )
+            signal = self._landing_page_context_signal(landing_page)
+            if signal:
+                self._log_signal_found(company, signal, source="homepage")
+                return signal
             return PublicSignal.none()
 
         log_info(
@@ -148,12 +144,13 @@ class CompanyResearcher:
             company=company,
             step="signal_discovery",
             candidate_count=len(candidate_urls),
-            candidate_urls=", ".join(candidate_urls[:10]),
+            candidate_urls=", ".join(candidate_urls),
         )
-        print("Signal discovery: checking %s website source pages for %s" % (len(candidate_urls), company))
+        print("Signal discovery: %s checking %s source pages" % (company, len(candidate_urls)))
 
         pages = await self.scraper.fetch_pages(candidate_urls, company=company)
         detail_urls = self._discover_detail_urls(pages)
+        detail_urls = detail_urls[:MAX_DETAIL_PAGES]
         detail_pages = []
 
         if detail_urls:
@@ -161,11 +158,11 @@ class CompanyResearcher:
                 "Signal detail links selected",
                 company=company,
                 step="signal_discovery",
-                detail_count=len(detail_urls[:10]),
-                detail_urls=", ".join(detail_urls[:10]),
+                detail_count=len(detail_urls),
+                detail_urls=", ".join(detail_urls),
             )
-            print("Signal discovery: checking %s detail pages for %s" % (len(detail_urls[:10]), company))
-            detail_pages = await self.scraper.fetch_pages(detail_urls[:10], company=company)
+            print("Signal discovery: %s checking %s detail pages" % (company, len(detail_urls)))
+            detail_pages = await self.scraper.fetch_pages(detail_urls, company=company)
 
         best_page = self._select_signal_page(detail_pages + pages + [landing_page])
 
@@ -176,18 +173,30 @@ class CompanyResearcher:
                 step="signal_discovery",
                 candidate_count=len(candidate_urls),
             )
+            signal = self._landing_page_context_signal(landing_page)
+            if signal:
+                self._log_signal_found(company, signal, source="homepage")
+                return signal
             return PublicSignal.none()
+
+        if best_page.url == landing_page.url:
+            signal = self._landing_page_context_signal(landing_page)
+            if signal:
+                self._log_signal_found(company, signal, source="homepage")
+                return signal
 
         signal_type = self._classify_signal_type(best_page)
         summary = self._summarize_signal(best_page, signal_type)
 
-        return PublicSignal(
+        signal = PublicSignal(
             summary=summary,
             source_url=best_page.url,
             signal_type=signal_type,
             source_title=best_page.title,
             confidence=0.72,
         )
+        self._log_signal_found(company, signal, source="source_page")
+        return signal
 
     def _rank_source_links(self, links: list[PageLink], landing_url: str) -> list[PageLink]:
         scored_links = []
@@ -331,6 +340,39 @@ class CompanyResearcher:
     def _append_signal_context(self, about_text: str, signal: PublicSignal, limit: int) -> str:
         signal_context = "\n\nPublic signal from %s: %s" % (signal.source_url, signal.summary)
         return (about_text + signal_context)[:limit]
+
+    def _landing_page_context_signal(self, landing_page: PageContent) -> Optional[PublicSignal]:
+        if landing_page.error:
+            return None
+
+        if (landing_page.status_code or 0) >= 400:
+            return None
+
+        if len(landing_page.text.strip()) < 80:
+            return None
+
+        summary = self._summarize_signal(landing_page, SignalType.WEBSITE_CONTEXT)
+        return PublicSignal(
+            summary="Website context: %s" % summary,
+            source_url=landing_page.url,
+            signal_type=SignalType.WEBSITE_CONTEXT,
+            source_title=landing_page.title,
+            confidence=0.35,
+        )
+
+    def _log_signal_found(self, company: str, signal: PublicSignal, source: str) -> None:
+        log_info(
+            "Public signal detected",
+            company=company,
+            step="signal_discovery",
+            signal_found=True,
+            signal_type=signal.signal_type.value,
+            source_url=signal.source_url,
+            source=source,
+            confidence=signal.confidence,
+            summary=signal.summary,
+        )
+        print("Signal detected: %s -> %s" % (company, signal.signal_type.value))
 
     def _same_company_site(self, source_url: str, target_url: str) -> bool:
         source_domain = urlparse(source_url).netloc.lower().removeprefix("www.")
