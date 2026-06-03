@@ -47,6 +47,8 @@ async def process_lead(
                 fraud_angle=classification.fraud_angle,
                 signal=context.public_signal.summary,
                 source_url=context.public_signal.source_url,
+                recipient_email=context.contact_email.email,
+                recipient_email_source_url=context.contact_email.source_url,
                 email=draft.email,
             )
 
@@ -64,6 +66,8 @@ async def process_lead(
                 fraud_angle="Processing failed before a safe fraud/risk angle could be generated.",
                 signal="No signal generated because processing failed.",
                 source_url="",
+                recipient_email="",
+                recipient_email_source_url="",
                 email="",
             )
 

@@ -38,6 +38,14 @@ class PageContent:
     status_code: Optional[int] = None
     error: Optional[str] = None
     links: List[PageLink] = field(default_factory=list)
+    emails: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ContactEmail:
+    email: str = ""
+    source_url: str = ""
+    confidence: float = 0.0
 
 
 # PublicSignal = the one source-backed public signal selected for outreach.
@@ -67,6 +75,7 @@ class ResearchContext:
     homepage_url: Optional[str] = None
     about_text: str = ""
     public_signal: PublicSignal = field(default_factory=PublicSignal.none)
+    contact_email: ContactEmail = field(default_factory=ContactEmail)
     errors: List[str] = field(default_factory=list)
 
 
@@ -104,6 +113,8 @@ class EnrichedLead:
     fraud_angle: str
     signal: str
     source_url: str
+    recipient_email: str
+    recipient_email_source_url: str
     email: str
 
     def to_csv_row(self) -> Dict[str, Any]:
@@ -113,5 +124,7 @@ class EnrichedLead:
             "fraud_angle": self.fraud_angle,
             "signal": self.signal,
             "source_url": self.source_url,
+            "recipient_email": self.recipient_email,
+            "recipient_email_source_url": self.recipient_email_source_url,
             "email": self.email,
         }

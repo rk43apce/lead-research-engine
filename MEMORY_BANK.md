@@ -28,6 +28,8 @@ institution_type
 fraud_angle
 signal
 source_url
+recipient_email
+recipient_email_source_url
 email
 ```
 
@@ -133,10 +135,11 @@ Use `LLM_PROVIDER=openai` or `LLM_PROVIDER=anthropic` to switch pipeline generat
 Shared dataclasses and enums. Important models:
 
 - `Lead`: input company and optional website.
-- `PageContent`: fetched page URL, title, text, status, links, error.
+- `PageContent`: fetched page URL, title, text, status, links, discovered emails, error.
 - `PageLink`: normalized page link from scraped HTML.
 - `PublicSignal`: selected source-backed signal summary, source URL, signal type, source title, confidence.
-- `ResearchContext`: grounded context for one lead.
+- `ContactEmail`: selected non-generic recipient email, source URL, confidence.
+- `ResearchContext`: grounded context for one lead, including public signal and contact email.
 - `LLMResearchOutput`: institution type, customer segment, services, fraud angle.
 - `EmailDraft`: generated email plus warnings.
 - `EnrichedLead`: final CSV row.
@@ -171,9 +174,7 @@ grep "Gemini email input prepared" logs/app.log
 - Uses FDIC BankFind institutions API for active community-bank-style leads with official website URLs when available.
 - Default CLI behavior is banks-only and website-required.
 - Resolves the current NCUA active federally insured credit union list from NCUA's call report data page and reads the ZIP/XLSX with standard-library parsing, but those rows are filtered out if no website is available.
-- Supports an OpenAI lead-source mode for community banks, credit unions, or both. This mode requires `OPENAI_API_KEY`, asks for JSON batches, filters rows missing company/website, drops generic or invalid management emails, and deduplicates by company name.
-- Optionally scrapes a small number of candidate website pages for non-generic email addresses.
-- Leaves management email blank when no non-generic same-domain email is found.
+- Supports an OpenAI lead-source mode for community banks, credit unions, or both. This mode requires `OPENAI_API_KEY`, asks for JSON batches, filters rows missing company/website, and deduplicates by company name.
 
 ### `generate_leads.py`
 
@@ -185,7 +186,6 @@ python generate_leads.py --total 1000
 ```
 
 - Supports source split controls with `--banks` and `--credit-unions`.
-- Supports optional email scraping with `--include-management-emails`.
 
 ### `services/pipeline.py`
 
@@ -223,7 +223,10 @@ validator.validate_signal(context.public_signal, company=company)
 - Calls scraper for landing page context.
 - Stores homepage URL and about text in `ResearchContext`.
 - Current low-level design: website-only public signal discovery, not broad web search.
-- Ranks source-like links on the company site, fetches source pages, discovers detail URLs, fetches detail pages, scores pages, and selects the best source-backed signal.
+- Ranks source-like links on the company site, fetches source pages, discovers detail URLs, fetches detail pages, follows one more third-level hop, scores pages, and selects the best source-backed signal.
+- Current crawl depth is homepage plus three link levels: homepage -> source pages -> detail pages -> third-level pages.
+- Also ranks contact/leadership/about/team links and scans those pages for non-generic same-domain recipient emails.
+- Generic inboxes such as `info@`, `support@`, `contact@`, `noreply@`, and similar are rejected for `recipient_email`.
 - Source-like links include press, press release, news, newsroom, media, investor, announcements, updates, blog, careers, and jobs.
 - Only same-company-site links should be considered for this website-only signal discovery.
 - Signal types include fraud/risk, compliance, payments, partnership, expansion, hiring, and press.

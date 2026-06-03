@@ -1,4 +1,5 @@
 import asyncio
+import re
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import aiohttp
@@ -14,6 +15,13 @@ DEFAULT_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     )
 }
+
+EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+OBFUSCATED_EMAIL_RE = re.compile(
+    r"\b([A-Z0-9._%+-]+)\s*(?:\[\s*at\s*\]|\(\s*at\s*\)|\sat\s)\s*"
+    r"([A-Z0-9.-]+)\s*(?:\[\s*dot\s*\]|\(\s*dot\s*\)|\sdot\s)\s*([A-Z]{2,})\b",
+    re.IGNORECASE,
+)
 
 
 def normalize_url(url: str) -> str:
@@ -118,6 +126,7 @@ class AsyncScraper:
     def _parse_html(self, url: str, html: str, status_code: int) -> PageContent:
         soup = BeautifulSoup(html, "html.parser")
         links = self._extract_links(url, soup)
+        emails = self._extract_emails(soup, html)
 
         # Remove non-content tags so the LLM receives readable page text.
         for tag in soup(["script", "style", "noscript", "svg"]):
@@ -139,6 +148,7 @@ class AsyncScraper:
             text=text,
             status_code=status_code,
             links=links,
+            emails=emails,
         )
 
     def _extract_links(self, base_url: str, soup: BeautifulSoup) -> list[PageLink]:
@@ -169,3 +179,32 @@ class AsyncScraper:
             seen_urls.add(absolute_url)
 
         return links
+
+    def _extract_emails(self, soup: BeautifulSoup, html: str) -> list[str]:
+        emails: list[str] = []
+        seen_emails = set()
+
+        for anchor in soup.find_all("a", href=True):
+            href = anchor.get("href", "").strip()
+            if href.lower().startswith("mailto:"):
+                raw_email = href.split(":", 1)[1].split("?", 1)[0]
+                self._append_email(raw_email, emails, seen_emails)
+
+        for raw_email in EMAIL_RE.findall(html):
+            self._append_email(raw_email, emails, seen_emails)
+
+        readable_text = soup.get_text(" ", strip=True)
+        for local_part, domain, suffix in OBFUSCATED_EMAIL_RE.findall(readable_text):
+            self._append_email("%s@%s.%s" % (local_part, domain, suffix), emails, seen_emails)
+
+        return emails
+
+    def _append_email(self, raw_email: str, emails: list[str], seen_emails: set[str]) -> None:
+        email = raw_email.strip().strip(".,;:()[]{}<>\"'").lower()
+        if not EMAIL_RE.fullmatch(email):
+            return
+        if email in seen_emails:
+            return
+
+        emails.append(email)
+        seen_emails.add(email)

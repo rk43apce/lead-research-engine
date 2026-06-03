@@ -130,11 +130,13 @@ Columns:
 - `fraud_angle`
 - `signal`
 - `source_url`
+- `recipient_email`
+- `recipient_email_source_url`
 - `email`
 
 ## Design Notes
 
-The research layer and LLM layer are intentionally separate. `researcher.py` and `scraper.py` gather grounded landing page text from the URL in the CSV, then follow press, news, media, and investor links discovered on that site. `llm.py` receives only that context and is instructed to return structured JSON. If no source-backed signal is found, the pipeline writes a safe "No recent verifiable public signal found" value and the email is not allowed to claim one.
+The research layer and LLM layer are intentionally separate. `researcher.py` and `scraper.py` gather grounded landing page text from the URL in the CSV, then follow press, news, media, and investor links discovered on that site up to three link levels deep. The researcher also scans homepage/contact/leadership-style pages for a non-generic recipient email. `llm.py` receives only grounded context and is instructed to return structured JSON. If no source-backed signal is found, the pipeline writes a safe "No recent verifiable public signal found" value and the email is not allowed to claim one.
 
 The system uses asyncio for lead-level concurrency and HTTP timeouts/retries to keep a batch of leads practical for the assignment target.
 
