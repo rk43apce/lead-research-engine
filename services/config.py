@@ -13,8 +13,11 @@ except ModuleNotFoundError:
 
 @dataclass(frozen=True)
 class Settings:
+    llm_provider: str
     openai_api_key: str | None
     openai_model: str
+    anthropic_api_key: str | None
+    anthropic_model: str
     request_timeout_seconds: float
     max_concurrency: int
     input_csv: Path
@@ -26,8 +29,11 @@ class Settings:
     def from_env(cls) -> "Settings":
         load_dotenv()
         return cls(
+            llm_provider=os.getenv("LLM_PROVIDER", "openai"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest"),
             request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "12")),
             max_concurrency=int(os.getenv("MAX_CONCURRENCY", "2")),
             input_csv=Path(os.getenv("INPUT_CSV", "input/leads.csv")),

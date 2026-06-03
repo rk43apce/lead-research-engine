@@ -1,4 +1,3 @@
-company,website
-Huntington Bank,https://www.huntington.com
-Alliant Credit Union,https://www.alliantcreditunion.org
-PenFed Credit Union,https://www.penfed.org
+company,website,institution_category
+First Community Bank,https://www.firstcommunity.com,community_bank
+Lake Michigan Credit Union,https://www.lmcu.org,credit_union

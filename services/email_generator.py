@@ -1,6 +1,6 @@
 import time
 
-from services.llm import OpenAIClient
+from services.llm import LLMClient
 from services.logger import log_error, log_info, log_timing, log_warning
 from services.models import EmailDraft, LLMResearchOutput, ResearchContext
 from services.prompts import email_prompt, research_prompt
@@ -9,11 +9,11 @@ from services.prompts import email_prompt, research_prompt
 class LeadContentGenerator:
     """Turns researched company context into LLM-generated output.
 
-    This class has one job: ask OpenAI for a classification and an email draft.
-    If OpenAI fails, it returns a safe fallback so the CSV pipeline can continue.
+    This class has one job: ask the configured LLM for a classification and an email draft.
+    If the LLM fails, it returns a safe fallback so the CSV pipeline can continue.
     """
 
-    def __init__(self, llm: OpenAIClient) -> None:
+    def __init__(self, llm: LLMClient) -> None:
         self.llm = llm
 
     async def classify_context(self, context: ResearchContext) -> LLMResearchOutput:
@@ -21,10 +21,10 @@ class LeadContentGenerator:
         started_at = time.perf_counter()
 
         try:
-            # OpenAI only receives grounded context prepared by the research layer.
+            # The LLM only receives grounded context prepared by the research layer.
             prompt = research_prompt(context)
             log_info(
-                "OpenAI classification input prepared",
+                "LLM classification input prepared",
                 company=company,
                 step="llm_input",
                 homepage_url=context.homepage_url or "-",
@@ -34,7 +34,7 @@ class LeadContentGenerator:
             )
             data = await self.llm.generate_json(
                 prompt,
-                operation="openai_classification",
+                operation="llm_classification",
                 company=company,
             )
 
@@ -98,7 +98,7 @@ class LeadContentGenerator:
             # This helps avoid unsupported "recent news" claims.
             prompt = email_prompt(context, classification.institution_type, classification.fraud_angle)
             log_info(
-                "OpenAI email input prepared",
+                "LLM email input prepared",
                 company=company,
                 step="llm_input",
                 institution_type=classification.institution_type,
@@ -108,7 +108,7 @@ class LeadContentGenerator:
             )
             data = await self.llm.generate_json(
                 prompt,
-                operation="openai_email_generation",
+                operation="llm_email_generation",
                 company=company,
             )
             email = str(data.get("email") or "")

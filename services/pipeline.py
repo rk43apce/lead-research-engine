@@ -5,7 +5,7 @@ from pathlib import Path
 from services.config import Settings
 from services.email_generator import LeadContentGenerator
 from services.lead import load_leads
-from services.llm import OpenAIClient
+from services.llm import create_llm_client
 from services.logger import log_error, log_timing
 from services.models import EnrichedLead, Lead
 from services.researcher import CompanyResearcher
@@ -30,7 +30,7 @@ async def process_lead(
             print("\nProcessing lead: %s" % company)
             context = await researcher.research(lead)
 
-            # Step 2: ask OpenAI to classify the company using only grounded context.
+            # Step 2: ask the configured LLM to classify the company using only grounded context.
             classification = await generator.classify_context(context)
 
             # Step 3: generate a personalized email draft.
@@ -76,9 +76,12 @@ async def run_pipeline(settings: Settings, input_path: Path):
     # Services are created once and shared across all lead tasks.
     scraper = AsyncScraper(timeout_seconds=settings.request_timeout_seconds)
     researcher = CompanyResearcher(scraper=scraper)
-    llm = OpenAIClient(
-        api_key=settings.openai_api_key,
-        model=settings.openai_model,
+    llm = create_llm_client(
+        provider=settings.llm_provider,
+        openai_api_key=settings.openai_api_key,
+        openai_model=settings.openai_model,
+        anthropic_api_key=settings.anthropic_api_key,
+        anthropic_model=settings.anthropic_model,
         timeout_seconds=settings.request_timeout_seconds + 18,
     )
     generator = LeadContentGenerator(llm)

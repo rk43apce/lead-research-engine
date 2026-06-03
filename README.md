@@ -12,7 +12,7 @@ It is a lead research and personalization system, not a fraud detection system.
 - Scrapes those discovered source pages, with one controlled second hop for specific releases when available
 - Uses landing page text as grounded company context
 - Safely says no recent public signal was found when no source-backed signal is discovered
-- Sends grounded context to OpenAI for classification and email generation
+- Sends grounded context to the configured LLM provider for classification and email generation
 - Validates emails for word count, source discipline, and no-PII positioning
 - Writes `output/enriched_leads.csv`
 
@@ -48,11 +48,20 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Add your OpenAI key to `.env`:
+Choose an LLM provider in `.env`:
 
 ```bash
+LLM_PROVIDER=openai
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-4.1-mini
+```
+
+To switch to Anthropic later:
+
+```bash
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=...
+ANTHROPIC_MODEL=claude-3-5-haiku-latest
 ```
 
 ## Run
@@ -69,6 +78,30 @@ OUTPUT_CSV=output/enriched_leads.csv
 ```
 
 Detailed logs are written to `logs/app.log` with company names, step names, and timing. The console only shows simple run status.
+
+## Generate Input Leads
+
+To create `input/leads.csv` automatically from public institution data:
+
+```bash
+python generate_leads.py --total 1000
+```
+
+By default this creates bank leads from FDIC data and only writes rows that have a website URL. Leads without websites are skipped because the research pipeline needs a website to scrape useful context. The generated CSV includes:
+
+- `company`
+- `website`
+- `institution_category`
+
+The main pipeline only requires `company` and optional `website`; `institution_category` is kept only as a helpful label.
+
+To use OpenAI as an AI-assisted lead source instead of FDIC:
+
+```bash
+python generate_leads.py --source openai --total 100 --institution-type both
+```
+
+OpenAI mode can request `community_bank`, `credit_union`, or `both`. It still requires `company` and `website` for every row, deduplicates names, and writes the same CSV columns. Treat OpenAI-sourced rows as AI-suggested leads; the downstream scraper/enrichment pipeline should verify that the websites are reachable and useful.
 
 ## Input CSV
 
@@ -109,8 +142,8 @@ The system uses asyncio for lead-level concurrency and HTTP timeouts/retries to 
 
 - Source URL required for every signal
 - LLM prompted to use supplied context only
-- JSON-only OpenAI outputs
-- Fallback classification and fallback email if OpenAI fails
+- JSON-only LLM outputs
+- Fallback classification and fallback email if the configured LLM fails
 - Email validation trims to 120 words
 - Missing signal emails are rewritten if they appear to imply a recent signal
 - Logging captures per-lead warnings without stopping the batch

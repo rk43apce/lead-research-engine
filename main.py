@@ -21,9 +21,10 @@ def main() -> None:
 
     print("AI lead research pipeline is running...")
 
-    if not settings.openai_api_key:
-        log_info("OPENAI_API_KEY is not set. LLM fields will use conservative fallbacks.", step="startup")
-        print("Warning: OPENAI_API_KEY is not set. Fallback content may be used.")
+    missing_key_name = _missing_llm_key_name(settings)
+    if missing_key_name:
+        log_info("%s is not set. LLM fields will use conservative fallbacks." % missing_key_name, step="startup")
+        print("Warning: %s is not set. Fallback content may be used." % missing_key_name)
 
     # 3. Run the async pipeline and write the final CSV.
     log_info("Starting lead research pipeline", step="startup", input=input_path, output=output_path)
@@ -37,6 +38,15 @@ def main() -> None:
 def _timestamped_output_path(path):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return path.with_name("%s_%s%s" % (path.stem, timestamp, path.suffix))
+
+
+def _missing_llm_key_name(settings):
+    provider = (settings.llm_provider or "openai").lower()
+    if provider == "openai" and not settings.openai_api_key:
+        return "OPENAI_API_KEY"
+    if provider == "anthropic" and not settings.anthropic_api_key:
+        return "ANTHROPIC_API_KEY"
+    return ""
 
 
 if __name__ == "__main__":
