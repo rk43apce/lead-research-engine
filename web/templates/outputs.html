@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set title = "Outputs" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">Output CSV Files</h1>
+    <div class="text-muted">{{ files|length }} file{% if files|length != 1 %}s{% endif %}{% if selected_date %} for {{ selected_date }}{% endif %}</div>
+  </div>
+  <div class="d-flex gap-2 align-items-start">
+    <form class="d-flex gap-2" method="get" action="{{ url_for('outputs') }}">
+      <input class="form-control" type="date" name="date" value="{{ selected_date }}">
+      <button class="btn btn-outline-primary" type="submit">Filter</button>
+      {% if selected_date %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('outputs') }}">Clear</a>
+      {% endif %}
+    </form>
+    <form method="post" action="{{ url_for('export_approved') }}">
+      <button class="btn btn-success" type="submit">Export Approved Emails</button>
+    </form>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead>
+      <tr>
+        <th>File name</th>
+        <th>Created time</th>
+        <th>File size</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for file in files %}
+      <tr>
+        <td>{{ file.name }}</td>
+        <td>{{ file.created_time|datetime }}</td>
+        <td>{{ file.size|filesize }}</td>
+        <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{{ url_for('review_output', filename=file.name) }}">Open / Review</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted">No CSV files found{% if selected_date %} for {{ selected_date }}{% endif %}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

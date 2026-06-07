@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% set title = "Review Emails" %}
+
+{% block content %}
+<div class="review-header d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-1">Review Emails</h1>
+    <div class="text-muted">{{ filename }} · {{ status_counts.all }} reviewable emails</div>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <form class="d-flex flex-wrap gap-2" method="get" action="{{ url_for('review_output', filename=filename) }}">
+      <select class="form-select review-filter-select" name="status" aria-label="Filter by review status" onchange="this.form.submit()">
+          <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending ({{ status_counts.pending }})</option>
+          <option value="modified" {% if status_filter == "modified" %}selected{% endif %}>Modified ({{ status_counts.modified }})</option>
+          <option value="approved" {% if status_filter == "approved" %}selected{% endif %}>Approved ({{ status_counts.approved }})</option>
+          <option value="rejected" {% if status_filter == "rejected" %}selected{% endif %}>Rejected ({{ status_counts.rejected }})</option>
+          <option value="all" {% if status_filter == "all" %}selected{% endif %}>All statuses ({{ status_counts.all }})</option>
+      </select>
+      <select class="form-select review-filter-select" name="row_filter" aria-label="Filter by email data" onchange="this.form.submit()">
+        <option value="all" {% if row_filter == "all" %}selected{% endif %}>All rows ({{ row_counts.all }})</option>
+        <option value="has_contact_email" {% if row_filter == "has_contact_email" %}selected{% endif %}>Has email ID ({{ row_counts.has_contact_email }})</option>
+        <option value="has_email_draft" {% if row_filter == "has_email_draft" %}selected{% endif %}>Has email draft ({{ row_counts.has_email_draft }})</option>
+      </select>
+    </form>
+    <form method="post" action="{{ url_for('export_approved') }}">
+      <button class="btn btn-success" type="submit">Export Approved</button>
+    </form>
+  </div>
+</div>
+
+{% if rows %}
+<div class="review-list">
+{% endif %}
+
+{% for row in rows %}
+<div class="review-list-row status-{{ row.status }}" tabindex="0" data-review-index="{{ loop.index0 }}" aria-label="Open editor for {{ row.company or "Unknown company" }}">
+  <div class="review-company">
+    <div class="fw-semibold text-truncate">{{ row.company or "Unknown company" }}</div>
+    <div class="text-muted small text-truncate">{{ row.institution_type or "Institution type unavailable" }}</div>
+  </div>
+
+  <div class="review-contact-email">
+    <div class="text-muted small">Email</div>
+    <div class="fw-semibold text-truncate">
+      {% if row.contact_email %}
+        <a href="mailto:{{ row.contact_email }}">{{ row.contact_email }}</a>
+      {% else %}
+        <span class="text-muted">Not available</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="review-draft-summary">
+    <div class="draft-subject text-truncate">
+      {% if row.email_subject %}{{ row.email_subject }}{% else %}No subject{% endif %}
+    </div>
+    <div class="draft-preview text-muted">{{ row.email_body or row.final_email or "No email generated." }}</div>
+  </div>
+
+  <div class="review-row-actions">
+    <button class="btn btn-outline-primary btn-sm icon-action edit-drawer-button" type="button" data-review-index="{{ loop.index0 }}" title="Review email" aria-label="Review email for {{ row.company or "Unknown company" }}">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </svg>
+    </button>
+    <form method="post" action="{{ url_for('reject_email', email_id=row.id) }}">
+      <button class="btn btn-outline-danger btn-sm icon-action" type="submit" title="Reject email" aria-label="Reject email for {{ row.company or "Unknown company" }}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6h18"></path>
+          <path d="M8 6V4h8v2"></path>
+          <path d="M19 6l-1 14H6L5 6"></path>
+          <path d="M10 11v5"></path>
+          <path d="M14 11v5"></path>
+        </svg>
+      </button>
+    </form>
+  </div>
+</div>
+{% else %}
+<div class="empty-state text-center">
+  <h2 class="h5">No {{ status_filter }} emails found</h2>
+  <p class="text-muted mb-0">Choose another filter to review a different status.</p>
+</div>
+{% endfor %}
+
+{% if rows %}
+</div>
+
+<div class="offcanvas offcanvas-end email-edit-drawer" tabindex="-1" id="emailEditDrawer" aria-labelledby="emailEditDrawerLabel">
+  <form class="drawer-form" id="emailEditForm" method="post" action="">
+    <div class="offcanvas-header">
+      <div>
+        <h2 class="offcanvas-title h5" id="emailEditDrawerLabel">Company</h2>
+        <div class="drawer-header-meta">
+          <span>Type: <strong id="drawerInstitutionType">Institution unavailable</strong></span>
+          <span>Source: <strong id="drawerSource">Source unavailable</strong></span>
+        </div>
+      </div>
+      <div class="drawer-header-actions">
+        <button class="btn btn-outline-secondary btn-sm" id="drawerPrevButton" type="button" title="Previous email">&uarr; Prev</button>
+        <button class="btn btn-outline-secondary btn-sm" id="drawerNextButton" type="button" title="Next email">&darr; Next</button>
+        <button class="btn btn-primary btn-sm" type="submit">Save</button>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      </div>
+    </div>
+    <div class="offcanvas-body">
+      <div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <label class="form-label mb-0" for="drawerSubject">Subject</label>
+          <span class="text-muted small">Saved drafts become status: modified</span>
+        </div>
+        <input class="form-control mb-3" id="drawerSubject" name="subject" placeholder="Email subject">
+        <label class="form-label" for="drawerBody">Body</label>
+        <textarea class="form-control email-editor" id="drawerBody" name="body" spellcheck="true"></textarea>
+        <div class="drawer-fraud-angle mt-3">
+          <div class="context-label mb-1">Fraud angle</div>
+          <p id="drawerFraudAngle">Fraud angle unavailable</p>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-footer">
+      <div>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Discard</button>
+      </div>
+      <div class="drawer-primary-actions">
+        <button class="btn btn-outline-primary" type="submit" name="action" value="save">Save Draft</button>
+        <button class="btn btn-success" type="submit" name="action" value="approve">Approve</button>
+        <button class="btn btn-primary" type="submit" name="action" value="approve_export">Approve & Prepare Send</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var reviewItems = {{ rows|tojson }};
+  var updateUrlTemplate = "{{ url_for('update_reviewed_email', email_id=0) }}";
+  var activeReviewIndex = 0;
+  var drawerElement = document.getElementById("emailEditDrawer");
+  var drawerForm = document.getElementById("emailEditForm");
+  var drawerTitle = document.getElementById("emailEditDrawerLabel");
+  var drawerInstitutionType = document.getElementById("drawerInstitutionType");
+  var drawerSource = document.getElementById("drawerSource");
+  var drawerFraudAngle = document.getElementById("drawerFraudAngle");
+  var drawerSubject = document.getElementById("drawerSubject");
+  var drawerBody = document.getElementById("drawerBody");
+  var drawerPrevButton = document.getElementById("drawerPrevButton");
+  var drawerNextButton = document.getElementById("drawerNextButton");
+
+  function updateDrawer(index) {
+    if (!reviewItems.length || index < 0 || index >= reviewItems.length) {
+      return;
+    }
+
+    activeReviewIndex = index;
+    var item = reviewItems[index];
+    drawerForm.action = updateUrlTemplate.replace("/0/", "/" + item.id + "/");
+    drawerTitle.textContent = item.company || "Unknown company";
+    drawerSubject.value = item.email_subject || "";
+    drawerBody.value = item.email_body || "";
+    drawerPrevButton.disabled = index === 0;
+    drawerNextButton.disabled = index === reviewItems.length - 1;
+
+    drawerInstitutionType.textContent = item.institution_type || "Institution unavailable";
+    drawerFraudAngle.textContent = item.fraud_angle || "Fraud angle unavailable";
+    drawerSource.innerHTML = "";
+    if (item.source_url) {
+      var source = document.createElement("a");
+      source.href = item.source_url;
+      source.target = "_blank";
+      source.rel = "noopener";
+      source.textContent = "Open source";
+      drawerSource.appendChild(source);
+    } else {
+      drawerSource.textContent = "Source unavailable";
+    }
+  }
+
+  function openReviewDrawer(index) {
+    if (!drawerElement) {
+      return;
+    }
+    updateDrawer(index);
+    bootstrap.Offcanvas.getOrCreateInstance(drawerElement).show();
+    drawerSubject.focus();
+  }
+
+  document.querySelectorAll(".edit-drawer-button").forEach(function (button) {
+    button.addEventListener("click", function () {
+      openReviewDrawer(Number(button.dataset.reviewIndex));
+    });
+  });
+
+  document.querySelectorAll(".review-list-row").forEach(function (row) {
+    row.addEventListener("keydown", function (event) {
+      if (event.code !== "Space") {
+        return;
+      }
+
+      if (event.target.closest("button, a, input, select, textarea")) {
+        return;
+      }
+
+      event.preventDefault();
+      openReviewDrawer(Number(row.dataset.reviewIndex));
+    });
+  });
+
+  if (drawerPrevButton) {
+    drawerPrevButton.addEventListener("click", function () {
+      updateDrawer(activeReviewIndex - 1);
+      drawerSubject.focus();
+    });
+  }
+
+  if (drawerNextButton) {
+    drawerNextButton.addEventListener("click", function () {
+      updateDrawer(activeReviewIndex + 1);
+      drawerSubject.focus();
+    });
+  }
+</script>
+{% endblock %}

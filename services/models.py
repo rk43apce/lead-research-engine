@@ -48,6 +48,16 @@ class ContactEmail:
     confidence: float = 0.0
 
 
+@dataclass
+class ResearchFacts:
+    institution_hint: str = ""
+    customer_clues: List[str] = field(default_factory=list)
+    services: List[str] = field(default_factory=list)
+    risk_clues: List[str] = field(default_factory=list)
+    evidence_snippets: List[str] = field(default_factory=list)
+    source_urls: List[str] = field(default_factory=list)
+
+
 # PublicSignal = the one source-backed public signal selected for outreach.
 @dataclass
 class PublicSignal:
@@ -76,6 +86,9 @@ class ResearchContext:
     about_text: str = ""
     public_signal: PublicSignal = field(default_factory=PublicSignal.none)
     contact_email: ContactEmail = field(default_factory=ContactEmail)
+    facts: ResearchFacts = field(default_factory=ResearchFacts)
+    is_website_blocked: bool = False
+    scrape_status: str = ""
     errors: List[str] = field(default_factory=list)
 
 

@@ -82,21 +82,13 @@ website
 
 Rows with missing company names are skipped and logged. If a website is missing, scraping is skipped and the lead continues with a safe no-signal state.
 
-`generate_leads.py` can now create this input CSV automatically from public institution sources:
+`generate_leads.py` can now create this input CSV automatically through LLM-assisted lead sourcing:
 
 ```bash
 python generate_leads.py --total 1000
 ```
 
-The default sourcing mode is banks-only from FDIC data, and generated rows must have a website URL. Leads without websites are skipped because the research pipeline cannot scrape useful context from them. It writes only `company`, `website`, and `institution_category`.
-
-OpenAI can also be used as an AI-assisted lead source:
-
-```bash
-python generate_leads.py --source openai --total 100 --institution-type both
-```
-
-OpenAI mode requests rows with mandatory `company` and official `website`, deduplicates company names, and writes the same CSV shape. Treat these rows as AI-suggested leads; downstream scraping should verify the website context.
+The generator requests rows with mandatory `company` and official `website`, deduplicates company names, and writes only `company`, `website`, and `institution_category`. Treat generated rows as AI-suggested leads; downstream scraping should verify the website context.
 
 ## Services
 
@@ -139,7 +131,8 @@ Shared dataclasses and enums. Important models:
 - `PageLink`: normalized page link from scraped HTML.
 - `PublicSignal`: selected source-backed signal summary, source URL, signal type, source title, confidence.
 - `ContactEmail`: selected non-generic recipient email, source URL, confidence.
-- `ResearchContext`: grounded context for one lead, including public signal and contact email.
+- `ResearchFacts`: compact local facts for LLM prompts, including services, customer clues, risk clues, evidence snippets, and source URLs.
+- `ResearchContext`: grounded context for one lead, including public signal, contact email, and compact facts.
 - `LLMResearchOutput`: institution type, customer segment, services, fraud angle.
 - `EmailDraft`: generated email plus warnings.
 - `EnrichedLead`: final CSV row.
@@ -170,11 +163,10 @@ grep "Gemini email input prepared" logs/app.log
 
 ### `services/lead_sourcing.py`
 
-- Generates lead CSV rows from grounded public institution sources.
-- Uses FDIC BankFind institutions API for active community-bank-style leads with official website URLs when available.
-- Default CLI behavior is banks-only and website-required.
-- Resolves the current NCUA active federally insured credit union list from NCUA's call report data page and reads the ZIP/XLSX with standard-library parsing, but those rows are filtered out if no website is available.
-- Supports an OpenAI lead-source mode for community banks, credit unions, or both. This mode requires `OPENAI_API_KEY`, asks for JSON batches, filters rows missing company/website, and deduplicates by company name.
+- Generates lead CSV rows through LLM-assisted sourcing.
+- Requires `OPENAI_API_KEY`.
+- Requests community banks, credit unions, or both.
+- Filters rows missing company/website and deduplicates by company name.
 
 ### `generate_leads.py`
 
@@ -227,6 +219,7 @@ validator.validate_signal(context.public_signal, company=company)
 - Current crawl depth is homepage plus three link levels: homepage -> source pages -> detail pages -> third-level pages.
 - Also ranks contact/leadership/about/team links and scans those pages for non-generic same-domain recipient emails.
 - Generic inboxes such as `info@`, `support@`, `contact@`, `noreply@`, and similar are rejected for `recipient_email`.
+- Extracts compact `ResearchFacts` locally before LLM calls to reduce prompt tokens and improve personalization.
 - Source-like links include press, press release, news, newsroom, media, investor, announcements, updates, blog, careers, and jobs.
 - Only same-company-site links should be considered for this website-only signal discovery.
 - Signal types include fraud/risk, compliance, payments, partnership, expansion, hiring, and press.

@@ -38,15 +38,17 @@ class LeadValidator:
         # Step 1: keep any warnings already created by the email generator.
         warnings = list(draft.warnings)
 
-        # Step 2: normalize whitespace so word counting and CSV output are clean.
-        email = self._normalize_whitespace(draft.email)
+        # Step 2: normalize whitespace while preserving Subject + body structure.
+        email = self._normalize_email_format(draft.email, company=company)
 
-        # Step 3: count words because the assignment requires emails under 120 words.
-        word_count = len(email.split())
+        # Step 3: count body words because the assignment requires the email body under 120 words.
+        subject, body = self._split_subject_body(email)
+        word_count = len(body.split())
 
         # Step 4: trim the email if the LLM returned something too long.
         if word_count > MAX_EMAIL_WORDS:
-            email = self._trim_to_words(email, MAX_EMAIL_WORDS)
+            body = self._trim_to_words(body, MAX_EMAIL_WORDS)
+            email = self._join_subject_body(subject, body)
             warnings.append("Email trimmed to %s words." % MAX_EMAIL_WORDS)
             log_warning(
                 "Email trimmed",
@@ -69,13 +71,14 @@ class LeadValidator:
                 company=company,
                 step="email_validation",
             )
-            email = (
+            body = (
                 "I could not find a recent verifiable public signal, so I will keep this general. "
                 "Financial institutions still face pressure to improve fraud review coverage without adding "
                 "PII exposure or disrupting existing workflows. The PreCogs helps augment fraud and risk teams "
                 "with AI-driven prevention context while keeping analysts in control. "
                 "Would a brief note on fit be useful?"
             )
+            email = self._join_subject_body(subject or self._fallback_subject(company), body)
 
         # Step 7: warn if the email misses The PreCogs no-PII positioning.
         mentions_pii = "PII" in email
@@ -92,8 +95,52 @@ class LeadValidator:
 
         return EmailDraft(email=email, warnings=warnings)
 
-    def _normalize_whitespace(self, value: str) -> str:
-        return " ".join(value.split())
+    def _normalize_email_format(self, value: str, company: str = "") -> str:
+        subject, body = self._split_subject_body(value)
+        subject = subject or self._fallback_subject(company)
+        body = " ".join(body.split())
+        return self._join_subject_body(subject, body)
+
+    def _split_subject_body(self, value: str):
+        cleaned = str(value or "").strip()
+        if not cleaned:
+            return "", ""
+
+        lines = cleaned.splitlines()
+        if lines and lines[0].lower().startswith("subject:"):
+            first_line = lines[0].split(":", 1)[1].strip()
+            body = "\n".join(lines[1:]).strip()
+            if not body:
+                subject, inline_body = self._split_inline_subject(first_line)
+                return subject, inline_body
+            subject = first_line
+            return subject, body
+
+        if cleaned.lower().startswith("subject:"):
+            without_label = cleaned.split(":", 1)[1].strip()
+            return self._split_inline_subject(without_label)
+
+        return "", cleaned
+
+    def _split_inline_subject(self, value: str):
+        for marker in [" Hi,", " Hi ", " Hello,", " Hello "]:
+            if marker in value:
+                subject, body = value.split(marker, 1)
+                greeting = marker.strip()
+                return subject.strip(), ("%s%s" % (greeting, body)).strip()
+        return value, ""
+
+    def _join_subject_body(self, subject: str, body: str) -> str:
+        return "Subject: %s\n\n%s" % (subject.strip(), body.strip())
+
+    def _fallback_subject(self, company: str) -> str:
+        subject = "Fraud review support"
+        if company:
+            subject = "Fraud review support for %s" % company
+        words = subject.split()
+        if len(words) > 8:
+            subject = " ".join(words[:8])
+        return subject.rstrip(".,;:")
 
     def _trim_to_words(self, value: str, max_words: int) -> str:
         words = value.split()

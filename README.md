@@ -70,6 +70,12 @@ ANTHROPIC_MODEL=claude-3-5-haiku-latest
 python main.py
 ```
 
+To process only the first few leads:
+
+```bash
+python main.py --limit 5
+```
+
 Input and output paths are configured through `.env`:
 
 ```text
@@ -81,27 +87,19 @@ Detailed logs are written to `logs/app.log` with company names, step names, and 
 
 ## Generate Input Leads
 
-To create `input/leads.csv` automatically from public institution data:
+To create `input/leads.csv` automatically with the LLM lead generator:
 
 ```bash
 python generate_leads.py --total 1000
 ```
 
-By default this creates bank leads from FDIC data and only writes rows that have a website URL. Leads without websites are skipped because the research pipeline needs a website to scrape useful context. The generated CSV includes:
+The generator requests U.S. community banks and credit unions and only writes rows that have a website URL. Leads without websites are skipped because the research pipeline needs a website to scrape useful context. The generated CSV includes:
 
 - `company`
 - `website`
 - `institution_category`
 
-The main pipeline only requires `company` and optional `website`; `institution_category` is kept only as a helpful label.
-
-To use OpenAI as an AI-assisted lead source instead of FDIC:
-
-```bash
-python generate_leads.py --source openai --total 100 --institution-type both
-```
-
-OpenAI mode can request `community_bank`, `credit_union`, or `both`. It still requires `company` and `website` for every row, deduplicates names, and writes the same CSV columns. Treat OpenAI-sourced rows as AI-suggested leads; the downstream scraper/enrichment pipeline should verify that the websites are reachable and useful.
+The main pipeline only requires `company` and optional `website`; `institution_category` is kept only as a helpful label. The generator can request `community_bank`, `credit_union`, or `both`.
 
 ## Input CSV
 
@@ -136,7 +134,7 @@ Columns:
 
 ## Design Notes
 
-The research layer and LLM layer are intentionally separate. `researcher.py` and `scraper.py` gather grounded landing page text from the URL in the CSV, then follow press, news, media, and investor links discovered on that site up to three link levels deep. The researcher also scans homepage/contact/leadership-style pages for a non-generic recipient email. `llm.py` receives only grounded context and is instructed to return structured JSON. If no source-backed signal is found, the pipeline writes a safe "No recent verifiable public signal found" value and the email is not allowed to claim one.
+The research layer and LLM layer are intentionally separate. `researcher.py` and `scraper.py` gather grounded landing page text from the URL in the CSV, then follow press, news, media, and investor links discovered on that site up to three link levels deep. The researcher also scans homepage/contact/leadership-style pages for a non-generic recipient email. Before prompting, the researcher compresses raw page text into compact facts such as services, customer clues, risk clues, evidence snippets, and source URLs. `llm.py` receives only that grounded compact context and is instructed to return structured JSON. If no source-backed signal is found, the pipeline writes a safe "No recent verifiable public signal found" value and the email is not allowed to claim one.
 
 The system uses asyncio for lead-level concurrency and HTTP timeouts/retries to keep a batch of leads practical for the assignment target.
 
@@ -153,3 +151,92 @@ The system uses asyncio for lead-level concurrency and HTTP timeouts/retries to 
 ## Limitations
 
 This version does not perform web search, so it only discovers signals linked from the company website's static HTML. For a production deployment, I would add an official search API, browser rendering for script-heavy sites, content freshness extraction, domain allow/deny lists, persistent caching, and a reviewed source ranking policy.
+
+## Demo Flask UI
+
+The Flask UI is a lightweight orchestration layer around the existing CLI pipeline. It does not rewrite the research, validation, or email generation services. The CLI remains the source of truth, and the UI simply starts runs, stores demo state in SQLite, and adds a human review step.
+
+### UI Setup
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Add login settings to `.env`:
+
+```bash
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+FLASK_SECRET_KEY=change-this-for-local-demo
+```
+
+Run the UI:
+
+```bash
+python -m web.app
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5000
+```
+
+### UI Pages
+
+- `/login` uses the hardcoded admin credentials from `.env` and Flask session auth.
+- `/` shows total reviewed leads, processed runs, approved emails, rejected emails, latest run status, and latest output CSV.
+- `/config` stores provider, API key, model, CSV paths, lead limit, and concurrency in SQLite. API keys are masked in the UI.
+- `/pipeline` starts the existing CLI with `python main.py --limit X`, records status in SQLite, and captures subprocess output.
+- `/outputs` lists CSV files in `output/`.
+- `/outputs/<filename>` imports a CSV into the review table and lets a human approve, reject, or modify email drafts.
+- `/logs` shows the last 200 lines from `logs/app.log`.
+
+### LLM Provider Settings
+
+For demo use, choose `Mock` in the UI. It uses no network and no API key.
+
+For real providers, choose `Gemini` or `Groq` and save the API key/model in the UI. The UI maps those values to the CLI subprocess environment:
+
+```text
+GEMINI_API_KEY
+GEMINI_MODEL
+GROQ_API_KEY
+GROQ_MODEL
+```
+
+The existing CLI still supports `.env` configuration directly, including:
+
+```text
+LLM_PROVIDER
+INPUT_CSV
+OUTPUT_CSV
+MAX_CONCURRENCY
+LOG_FILE
+```
+
+### Approval Workflow
+
+The review screen is the human-in-the-loop step. Generated emails start as `pending`. A reviewer can:
+
+- approve an email
+- reject an email
+- edit and save a modified email
+
+Only rows with `status = approved` are exported for the future email sending module. The UI does not send emails.
+
+To create the approved export, click `Export Approved Emails` from the output or review page. This writes:
+
+```text
+output/approved_emails.csv
+```
+
+Exported fields:
+
+- `company`
+- `source_url`
+- `contact_email`
+- `final_email`
+- `status`

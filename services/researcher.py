@@ -4,7 +4,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from services.logger import log_info, log_timing, log_warning
-from services.models import ContactEmail, PageContent, PageLink, PublicSignal, ResearchContext, SignalType
+from services.models import ContactEmail, PageContent, PageLink, PublicSignal, ResearchContext, ResearchFacts, SignalType
 from services.scraper import AsyncScraper
 
 
@@ -147,6 +147,63 @@ ROLE_EMAIL_PREFIXES = {
     "management",
 }
 
+INSTITUTION_HINTS = [
+    ("credit_union", ("credit union", "member-owned", "members", "federal credit union")),
+    ("community_bank", ("community bank", "personal banking", "business banking", "commercial banking")),
+    ("bank", ("bank", "banking", "checking", "savings")),
+    ("payments_or_fintech", ("payments", "fintech", "merchant", "processing", "digital banking")),
+]
+
+SERVICE_KEYWORDS = {
+    "Checking accounts": ("checking", "checking account"),
+    "Savings accounts": ("savings", "money market", "certificate", "cds", "cd "),
+    "Credit cards": ("credit card", "cards"),
+    "Debit cards": ("debit card", "debit"),
+    "Mortgage lending": ("mortgage", "home loan", "home lending"),
+    "Auto loans": ("auto loan", "vehicle loan", "car loan"),
+    "Personal loans": ("personal loan", "consumer loan"),
+    "Business banking": ("business banking", "small business", "commercial banking"),
+    "Commercial lending": ("commercial loan", "commercial lending", "business loan"),
+    "Treasury management": ("treasury", "cash management"),
+    "Digital banking": ("online banking", "mobile banking", "digital banking"),
+    "ACH and wire payments": ("ach", "wire transfer", "wire", "payments"),
+    "Merchant services": ("merchant", "card processing", "payment processing"),
+    "Wealth management": ("wealth", "investment", "financial advisor"),
+}
+
+CUSTOMER_KEYWORDS = {
+    "members": ("member", "members"),
+    "military members and families": ("military", "veteran", "armed forces", "service members"),
+    "retail consumers": ("personal banking", "consumer", "individuals", "families"),
+    "small businesses": ("small business", "business owners"),
+    "commercial clients": ("commercial", "middle market", "treasury management"),
+    "local communities": ("community", "local", "neighbors"),
+    "students or young adults": ("student", "young adult", "youth"),
+}
+
+RISK_KEYWORDS = {
+    "Account takeover": ("account takeover", "online banking", "login", "password", "authentication"),
+    "Identity verification": ("identity", "verification", "kyc", "know your customer"),
+    "Payment fraud": ("ach", "wire", "payment", "debit", "card", "transaction"),
+    "Scams and social engineering": ("scam", "phishing", "social engineering", "fraud prevention"),
+    "AML/BSA compliance": ("aml", "bsa", "anti-money laundering", "compliance"),
+    "Loan application fraud": ("loan", "mortgage", "application"),
+    "Merchant fraud": ("merchant", "chargeback", "card processing"),
+}
+
+BLOCKED_PAGE_PATTERNS = (
+    "just a moment",
+    "you have been blocked",
+    "unable to access",
+    "confirm you",
+    "confirm you're human",
+    "we need to confirm",
+    "security service",
+    "bot",
+    "captcha",
+    "access denied",
+)
+
 
 class CompanyResearcher:
     """Collects factual context from the company URL provided in the CSV.
@@ -172,13 +229,28 @@ class CompanyResearcher:
 
         context.homepage_url = page.url
         context.about_text = page.text[:15000]
+        context.is_website_blocked = self._is_blocked_page(page)
+        context.scrape_status = self._scrape_status(page)
 
         if page.error:
             context.errors.append(page.error)
 
+        if context.is_website_blocked:
+            log_warning(
+                "Website blocked for scraping; skipping LLM enrichment",
+                company=company,
+                step="scrape",
+                source_url=page.url,
+                status=page.status_code,
+                page_title=page.title or "-",
+                text_preview=page.text[:160],
+            )
+            return context
+
         signal = await self._find_public_signal(page, company=company)
         context.public_signal = signal
         context.contact_email = await self._find_contact_email(page, company=company)
+        context.facts = self._extract_research_facts(context, page)
 
         if signal.source_url:
             context.about_text = self._append_signal_context(context.about_text, signal, limit=15000)
@@ -197,6 +269,9 @@ class CompanyResearcher:
             signal_url=signal.source_url or "-",
             recipient_email=context.contact_email.email or "-",
             recipient_email_source_url=context.contact_email.source_url or "-",
+            facts_services=", ".join(context.facts.services) or "-",
+            facts_customer_clues=", ".join(context.facts.customer_clues) or "-",
+            facts_risk_clues=", ".join(context.facts.risk_clues) or "-",
             duration_ms=log_timing(started_at),
         )
 
@@ -212,6 +287,95 @@ class CompanyResearcher:
         )
 
         return context
+
+    def _is_blocked_page(self, page: PageContent) -> bool:
+        if page.status_code in {401, 403, 429}:
+            return True
+
+        haystack = "%s %s" % (page.title.lower(), page.text[:1000].lower())
+        return any(pattern in haystack for pattern in BLOCKED_PAGE_PATTERNS)
+
+    def _scrape_status(self, page: PageContent) -> str:
+        if self._is_blocked_page(page):
+            return "blocked_for_scraping"
+        if page.error:
+            return "scrape_error"
+        if (page.status_code or 0) >= 400:
+            return "http_error"
+        return "scraped"
+
+    def _extract_research_facts(self, context: ResearchContext, landing_page: PageContent) -> ResearchFacts:
+        text = " ".join(
+            [
+                landing_page.title,
+                landing_page.text,
+                context.public_signal.summary,
+            ]
+        )
+        lower_text = text.lower()
+
+        return ResearchFacts(
+            institution_hint=self._first_keyword_match(lower_text, INSTITUTION_HINTS),
+            customer_clues=self._matched_labels(lower_text, CUSTOMER_KEYWORDS, limit=4),
+            services=self._matched_labels(lower_text, SERVICE_KEYWORDS, limit=8),
+            risk_clues=self._matched_labels(lower_text, RISK_KEYWORDS, limit=5),
+            evidence_snippets=self._evidence_snippets(landing_page.text, limit=4),
+            source_urls=self._fact_source_urls(context, landing_page),
+        )
+
+    def _first_keyword_match(self, lower_text: str, groups: list[tuple[str, tuple[str, ...]]]) -> str:
+        for label, keywords in groups:
+            if any(keyword in lower_text for keyword in keywords):
+                return label
+        return ""
+
+    def _matched_labels(self, lower_text: str, groups: dict[str, tuple[str, ...]], limit: int) -> list[str]:
+        matches = []
+        for label, keywords in groups.items():
+            if any(keyword in lower_text for keyword in keywords):
+                matches.append(label)
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def _evidence_snippets(self, text: str, limit: int) -> list[str]:
+        sentences = self._sentences(text)
+        scored = []
+        keywords = []
+        for keyword_group in list(SERVICE_KEYWORDS.values()) + list(CUSTOMER_KEYWORDS.values()) + list(RISK_KEYWORDS.values()):
+            keywords.extend(keyword_group)
+
+        for sentence in sentences:
+            lower_sentence = sentence.lower()
+            score = sum(1 for keyword in keywords if keyword in lower_sentence)
+            if score <= 0:
+                continue
+            scored.append((score, sentence[:220]))
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        snippets = []
+        seen = set()
+        for _, sentence in scored:
+            normalized = sentence.lower()
+            if normalized in seen:
+                continue
+            snippets.append(sentence)
+            seen.add(normalized)
+            if len(snippets) >= limit:
+                break
+        return snippets
+
+    def _sentences(self, text: str) -> list[str]:
+        cleaned = " ".join(text.split())
+        parts = re.split(r"(?<=[.!?])\s+", cleaned)
+        return [part.strip(" ,;:") for part in parts if 40 <= len(part.strip()) <= 260]
+
+    def _fact_source_urls(self, context: ResearchContext, landing_page: PageContent) -> list[str]:
+        urls = []
+        for url in [landing_page.url, context.public_signal.source_url, context.contact_email.source_url]:
+            if url and url not in urls:
+                urls.append(url)
+        return urls[:4]
 
     async def _find_public_signal(self, landing_page: PageContent, company: str) -> PublicSignal:
         candidate_links = self._rank_source_links(landing_page.links, landing_page.url)

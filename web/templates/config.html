@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% set title = "Configuration" %}
+
+{% block content %}
+<h1 class="h3 mb-4">Configuration</h1>
+
+<form method="post" action="{{ url_for('config_post') }}" class="card">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label" for="llm_provider">LLM provider</label>
+        <select class="form-select" id="llm_provider" name="llm_provider">
+          {% for provider in ["OpenAI", "Anthropic", "Gemini", "Groq", "Mock"] %}
+            <option value="{{ provider }}" {% if config.llm_provider == provider %}selected{% endif %}>{{ provider }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="model_name">Model name</label>
+        <input class="form-control" id="model_name" name="model_name" value="{{ config.model_name }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="api_key">API key</label>
+        <input class="form-control" id="api_key" name="api_key" type="password" placeholder="{{ masked_key }}">
+        <div class="form-text">Leave blank to use the saved key or provider key from .env. Full key is never displayed.</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="max_concurrency">Max concurrency</label>
+        <input class="form-control" id="max_concurrency" name="max_concurrency" type="number" min="1" value="{{ config.max_concurrency }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="input_csv_path">Input CSV path</label>
+        <input class="form-control" id="input_csv_path" name="input_csv_path" value="{{ config.input_csv_path }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="output_csv_path">Output CSV path</label>
+        <input class="form-control" id="output_csv_path" name="output_csv_path" value="{{ config.output_csv_path }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="number_of_leads">Number of leads to process</label>
+        <input class="form-control" id="number_of_leads" name="number_of_leads" type="number" min="1" value="{{ config.number_of_leads }}">
+      </div>
+    </div>
+    <div class="mt-4">
+      <button class="btn btn-primary" type="submit">Save Config</button>
+    </div>
+  </div>
+</form>
+{% endblock %}

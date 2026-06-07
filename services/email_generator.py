@@ -30,6 +30,10 @@ class LeadContentGenerator:
                 homepage_url=context.homepage_url or "-",
                 scraped_text_chars=len(context.about_text),
                 prompt_chars=len(prompt),
+                facts_services_count=len(context.facts.services),
+                facts_customer_count=len(context.facts.customer_clues),
+                facts_risk_count=len(context.facts.risk_clues),
+                facts_evidence_count=len(context.facts.evidence_snippets),
                 has_signal=bool(context.public_signal.source_url),
             )
             data = await self.llm.generate_json(
@@ -104,6 +108,9 @@ class LeadContentGenerator:
                 institution_type=classification.institution_type,
                 fraud_angle=classification.fraud_angle,
                 prompt_chars=len(prompt),
+                services=", ".join(context.facts.services[:5]) or "-",
+                customer_clues=", ".join(context.facts.customer_clues[:4]) or "-",
+                recipient_email=context.contact_email.email or "-",
                 has_signal=bool(context.public_signal.source_url),
             )
             data = await self.llm.generate_json(
@@ -111,7 +118,9 @@ class LeadContentGenerator:
                 operation="llm_email_generation",
                 company=company,
             )
-            email = str(data.get("email") or "")
+            subject = self._normalize_subject(data.get("subject"), context, classification)
+            body = str(data.get("email") or "").strip()
+            email = self._format_subject_and_body(subject, body)
 
             log_info(
                 "Email generation completed",
@@ -147,6 +156,9 @@ class LeadContentGenerator:
     def _fallback_email(self, context: ResearchContext, classification: LLMResearchOutput) -> str:
         company = context.lead.company
         signal = context.public_signal
+        services = ", ".join(context.facts.services[:2])
+        customers = ", ".join(context.facts.customer_clues[:2])
+        risks = ", ".join(context.facts.risk_clues[:2])
 
         if signal.source_url and signal.signal_type.value != "website_context":
             opener = "I saw a public signal for %s related to %s." % (company, signal.signal_type.value)
@@ -155,11 +167,62 @@ class LeadContentGenerator:
         else:
             opener = "I could not find a recent verifiable public signal for %s, so I will keep this general." % company
 
-        return (
-            "%s Fraud and risk teams often need more review coverage without adding PII exposure "
+        context_line = ""
+        if services or customers:
+            context_line = " Your public site points to %s%s." % (
+                services or "financial services",
+                " for %s" % customers if customers else "",
+            )
+
+        risk_line = risks or classification.fraud_angle
+
+        subject = self._fallback_subject(context, classification)
+        body = (
+            "%s%s That can create pressure around %s. Fraud and risk teams often need more review coverage without adding PII exposure "
             "or replacing existing workflows. The PreCogs helps augment analysts with AI-driven "
             "fraud prevention context while keeping teams in control. Would a brief note on fit be useful?"
-        ) % opener
+        ) % (opener, context_line, risk_line)
+        return self._format_subject_and_body(subject, body)
+
+    def _normalize_subject(self, value, context: ResearchContext, classification: LLMResearchOutput) -> str:
+        subject = str(value or "").strip()
+        subject = subject.removeprefix("Subject:").strip()
+        if not subject or subject.lower() in {"unknown", "n/a", "none", "null", "-"}:
+            return self._fallback_subject(context, classification)
+
+        words = subject.split()
+        return self._limit_subject(subject)
+
+    def _fallback_subject(self, context: ResearchContext, classification: LLMResearchOutput) -> str:
+        company = context.lead.company
+        services = context.facts.services
+        risk_clues = context.facts.risk_clues
+
+        if services and risk_clues:
+            return self._limit_subject("%s fraud review for %s" % (services[0], company))
+        if risk_clues:
+            return self._limit_subject("%s support for %s" % (risk_clues[0], company))
+        if services:
+            return self._limit_subject("%s risk support for %s" % (services[0], company))
+
+        institution_type = classification.institution_type
+        if institution_type and institution_type.lower() not in {"unknown", "unknown financial institution"}:
+            return self._limit_subject("%s fraud support for %s" % (institution_type, company))
+
+        return self._limit_subject("Fraud review support for %s" % company)
+
+    def _limit_subject(self, subject: str) -> str:
+        words = subject.split()
+        if len(words) > 8:
+            subject = " ".join(words[:8])
+        return subject.rstrip(".,;:")
+
+    def _format_subject_and_body(self, subject: str, body: str) -> str:
+        body = body.strip()
+        lines = body.splitlines()
+        if lines and lines[0].lower().startswith("subject:"):
+            body = "\n".join(lines[1:]).strip()
+        return "Subject: %s\n\n%s" % (subject.strip(), body)
 
     def _normalize_fraud_angle(
         self,

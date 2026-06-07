@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% set title = "Logs" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-1">Latest Run Log</h1>
+    {% if latest_run %}
+      <div class="text-muted">
+        Run #{{ latest_run.id }} · {{ latest_run.status }} · Started {{ latest_run.started_at or "-" }}
+      </div>
+    {% else %}
+      <div class="text-muted">No pipeline run found yet.</div>
+    {% endif %}
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('logs') }}">Refresh</a>
+</div>
+
+<pre class="log-box">{% for line in lines %}{{ line }}
+{% else %}No log captured for the latest run yet.
+{% endfor %}</pre>
+{% endblock %}

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import time
 from pathlib import Path
@@ -29,6 +31,19 @@ async def process_lead(
             # Step 1: collect grounded public context and source-backed signal.
             print("\nProcessing lead: %s" % company)
             context = await researcher.research(lead)
+
+            if context.is_website_blocked:
+                print("Skipped lead: %s website blocked for scraping" % company)
+                return EnrichedLead(
+                    company=lead.company,
+                    institution_type="Website blocked for scraping",
+                    fraud_angle="",
+                    signal="Website blocked for scraping.",
+                    source_url=context.homepage_url or lead.website or "",
+                    recipient_email="",
+                    recipient_email_source_url="",
+                    email="",
+                )
 
             # Step 2: ask the configured LLM to classify the company using only grounded context.
             classification = await generator.classify_context(context)
@@ -72,9 +87,9 @@ async def process_lead(
             )
 
 
-async def run_pipeline(settings: Settings, input_path: Path):
+async def run_pipeline(settings: Settings, input_path: Path, limit: int | None = None):
     """Create the services and run all leads concurrently."""
-    leads = load_leads(input_path)
+    leads = load_leads(input_path, limit=limit)
     print("Pipeline: processing %s leads with max concurrency %s" % (len(leads), settings.max_concurrency))
 
     # Services are created once and shared across all lead tasks.
@@ -86,6 +101,10 @@ async def run_pipeline(settings: Settings, input_path: Path):
         openai_model=settings.openai_model,
         anthropic_api_key=settings.anthropic_api_key,
         anthropic_model=settings.anthropic_model,
+        gemini_api_key=settings.gemini_api_key,
+        gemini_model=settings.gemini_model,
+        groq_api_key=settings.groq_api_key,
+        groq_model=settings.groq_model,
         timeout_seconds=settings.request_timeout_seconds + 18,
     )
     generator = LeadContentGenerator(llm)

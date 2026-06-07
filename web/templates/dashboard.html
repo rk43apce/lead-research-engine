@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set title = "Dashboard" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Dashboard</h1>
+  <a class="btn btn-primary" href="{{ url_for('pipeline') }}">Run Pipeline</a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="metric"><span>Total leads</span><strong>{{ counts.total_leads }}</strong></div></div>
+  <div class="col-md-3"><div class="metric"><span>Total processed</span><strong>{{ counts.total_processed }}</strong></div></div>
+  <div class="col-md-3"><div class="metric"><span>Approved emails</span><strong>{{ counts.total_approved }}</strong></div></div>
+  <div class="col-md-3"><div class="metric"><span>Rejected emails</span><strong>{{ counts.total_rejected }}</strong></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <h2 class="h5">Latest Pipeline Status</h2>
+        {% if latest_run %}
+          <p class="mb-1"><span class="badge text-bg-secondary">{{ latest_run.status }}</span></p>
+          <p class="mb-1">Started: {{ latest_run.started_at or "-" }}</p>
+          <p class="mb-0">Ended: {{ latest_run.ended_at or "-" }}</p>
+        {% else %}
+          <p class="text-muted mb-0">No pipeline runs yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <h2 class="h5">Latest Output CSV</h2>
+        {% if latest_output %}
+          <p class="mb-3">{{ latest_output }}</p>
+          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('review_output', filename=latest_output) }}">Open Review</a>
+        {% else %}
+          <p class="text-muted mb-0">No output files found.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
