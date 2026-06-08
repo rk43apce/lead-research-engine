@@ -38,6 +38,16 @@
         <label class="form-label" for="email_reply_to">Reply-to email</label>
         <input class="form-control" id="email_reply_to" name="email_reply_to" value="{{ config.email_reply_to }}" placeholder="optional">
       </div>
+      <div class="col-md-3">
+        <label class="form-label" for="email_rate_limit_seconds">Delay between emails (seconds)</label>
+        <input class="form-control" id="email_rate_limit_seconds" name="email_rate_limit_seconds" type="number" min="0" step="0.1" value="{{ config.email_rate_limit_seconds or '1.0' }}">
+        <div class="form-text">0 = no delay. Recommended: 1.0s to stay within provider rate limits.</div>
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="email_unsubscribe_footer">Unsubscribe footer</label>
+        <textarea class="form-control" id="email_unsubscribe_footer" name="email_unsubscribe_footer" rows="2" placeholder="To opt out of future emails, reply with 'Unsubscribe' in the subject line.">{{ config.email_unsubscribe_footer }}</textarea>
+        <div class="form-text">Appended to every email body before sending. Required for CAN-SPAM compliance.</div>
+      </div>
     </div>
     <div class="mt-4 d-flex flex-wrap gap-2">
       <button class="btn btn-primary" type="submit">Save Provider</button>

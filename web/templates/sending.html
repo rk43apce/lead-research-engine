@@ -7,14 +7,12 @@
     <h1 class="h3 mb-1">Email Sending</h1>
     <div class="text-muted">Vendor-neutral sending controller for approved emails.</div>
   </div>
-  <form method="post" action="{{ url_for('send_approved_emails') }}">
-    <div class="d-flex flex-wrap gap-2 justify-content-end">
-      <a class="btn btn-outline-primary" href="{{ url_for('sending_settings') }}">Provider Settings</a>
-      <button class="btn btn-primary" type="submit" {% if approved_count == 0 %}disabled{% endif %}>
-        Send Approved Emails
-      </button>
-    </div>
-  </form>
+  <div class="d-flex flex-wrap gap-2 justify-content-end">
+    <a class="btn btn-outline-primary" href="{{ url_for('sending_settings') }}">Provider Settings</a>
+    <a class="btn btn-primary {% if approved_count == 0 %}disabled{% endif %}" href="{{ url_for('sending_confirm') }}">
+      Review &amp; Send ({{ approved_count }})
+    </a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -55,6 +53,44 @@
     </div>
   </div>
 </div>
+
+{% if sent_rows %}
+<div class="card mb-3">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Per-Email Send Status</h2>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Recipient</th>
+            <th>Subject</th>
+            <th>Status</th>
+            <th>Sent at</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sent_rows %}
+          <tr>
+            <td>{{ row.company or "-" }}</td>
+            <td>{{ row.contact_email or "-" }}</td>
+            <td class="text-muted small">{{ row.email_subject or "No subject" }}</td>
+            <td>
+              <span class="badge {% if row.email_send_status == 'sent' %}text-bg-success{% elif row.email_send_status == 'failed' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">
+                {{ row.email_send_status }}
+              </span>
+            </td>
+            <td class="small">{{ row.email_sent_at or "-" }}</td>
+            <td class="send-error-cell small">{{ row.email_last_error or "-" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="card">
   <div class="card-body">

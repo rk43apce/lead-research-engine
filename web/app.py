@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -10,7 +11,12 @@ from web.auth import expected_password, expected_username, login_required
 from web.db import (
     BASE_DIR,
     all_runs,
+    all_pending_emails,
+    already_sent_count,
     approved_emails_for_sending,
+    approved_emails_with_send_status,
+    approved_unsent_count,
+    pending_review_count,
     create_email_send_run,
     create_pipeline_run,
     dashboard_counts,
@@ -83,11 +89,31 @@ def logout():
 @app.route("/")
 @login_required
 def dashboard():
+    counts = dashboard_counts()
+    run = latest_run()
+    latest_output = latest_output_file()
+    pending = pending_review_count()
+    unsent = approved_unsent_count()
+
+    if not run:
+        state = "no_run"
+    elif pending > 0 and unsent == 0:
+        state = "needs_review"
+    elif pending > 0 and unsent > 0:
+        state = "review_and_send"
+    elif unsent > 0:
+        state = "ready_to_send"
+    else:
+        state = "complete"
+
     return render_template(
         "dashboard.html",
-        counts=dashboard_counts(),
-        latest_run=latest_run(),
-        latest_output=latest_output_file(),
+        counts=counts,
+        latest_run=run,
+        latest_output=latest_output,
+        pending_count=pending,
+        approved_unsent=unsent,
+        state=state,
     )
 
 
@@ -166,6 +192,40 @@ def pipeline_run():
     else:
         flash("Pipeline started.", "success")
     return redirect(url_for("pipeline"))
+
+
+@app.route("/review/pending")
+@login_required
+def review_pending():
+    all_rows = [_row_with_email_parts(r) for r in all_pending_emails()]
+
+    row_filter = request.args.get("row_filter", "has_email_draft")
+    if row_filter not in {"all", "has_contact_email", "has_email_draft"}:
+        row_filter = "has_email_draft"
+
+    if row_filter == "has_contact_email":
+        rows = [r for r in all_rows if (r.get("contact_email") or "").strip()]
+    elif row_filter == "has_email_draft":
+        rows = [r for r in all_rows if (r.get("final_email") or "").strip()]
+    else:
+        rows = all_rows
+
+    row_counts = {
+        "all": len(all_rows),
+        "has_contact_email": sum(1 for r in all_rows if (r.get("contact_email") or "").strip()),
+        "has_email_draft": sum(1 for r in all_rows if (r.get("final_email") or "").strip()),
+    }
+
+    return render_template(
+        "review.html",
+        filename=None,
+        rows=rows,
+        status_filter="pending",
+        row_filter=row_filter,
+        status_counts={"all": len(all_rows), "pending": len(all_rows), "modified": 0, "approved": 0, "rejected": 0},
+        row_counts=row_counts,
+        review_url=url_for("review_pending"),
+    )
 
 
 @app.route("/outputs")
@@ -288,12 +348,14 @@ def export_approved():
 def sending():
     config_values = get_config()
     approved_rows = approved_emails_for_sending()
+    sent_rows = [_row_with_email_parts(r) for r in approved_emails_with_send_status()]
     return render_template(
         "sending.html",
         config=config_values,
         approved_count=len(approved_rows),
         latest_send_run=latest_email_send_run(),
         send_events=recent_email_send_events(),
+        sent_rows=sent_rows,
     )
 
 
@@ -322,10 +384,72 @@ def sending_config_post():
             "email_from_email": request.form.get("email_from_email", ""),
             "email_from_name": request.form.get("email_from_name", "The PreCogs"),
             "email_reply_to": request.form.get("email_reply_to", ""),
+            "email_rate_limit_seconds": request.form.get("email_rate_limit_seconds", "1.0"),
+            "email_unsubscribe_footer": request.form.get("email_unsubscribe_footer", ""),
         }
     )
     flash("Email provider settings saved.", "success")
     return redirect(url_for("sending_settings"))
+
+
+@app.route("/sending/confirm")
+@login_required
+def sending_confirm():
+    config_values = get_config()
+    rows_to_send = approved_emails_for_sending()
+    sent_already = already_sent_count()
+
+    provider = (config_values.get("email_provider") or "Mock").strip()
+    from_email = (config_values.get("email_from_email") or "").strip()
+    api_key = (config_values.get("email_api_key") or os.getenv("SENDGRID_API_KEY", "")).strip()
+    unsubscribe_footer = (config_values.get("email_unsubscribe_footer") or "").strip()
+    rate_limit = _safe_float(config_values.get("email_rate_limit_seconds"), 1.0)
+
+    checks = []
+    is_mock = provider.lower() == "mock"
+
+    if is_mock:
+        checks.append(("info", "Mock provider selected — no real emails will be sent."))
+    else:
+        if not from_email:
+            checks.append(("error", "From email is not configured. Set it in Provider Settings."))
+        elif _is_free_email_domain(from_email):
+            domain = from_email.split("@")[-1]
+            checks.append(("warning", "From email uses a free domain (%s). Cold email from free providers is typically blocked or spam-filtered. Use a domain you own with SendGrid domain authentication." % domain))
+        else:
+            checks.append(("ok", "From email uses a custom domain."))
+
+        if not api_key:
+            checks.append(("error", "No SendGrid API key configured."))
+        else:
+            checks.append(("ok", "SendGrid API key is configured."))
+
+    if unsubscribe_footer:
+        checks.append(("ok", "Unsubscribe footer will be appended to each email."))
+    else:
+        checks.append(("warning", "No unsubscribe footer set. CAN-SPAM compliance requires an opt-out mechanism."))
+
+    if rate_limit > 0:
+        checks.append(("ok", "Rate limiting: %.1fs delay between each email." % rate_limit))
+    else:
+        checks.append(("info", "Rate limiting disabled — all emails send without delay."))
+
+    if sent_already > 0:
+        checks.append(("info", "%d email(s) already sent and will be skipped (duplicate prevention)." % sent_already))
+
+    has_errors = any(level == "error" for level, _ in checks)
+    preview_rows = [_row_with_email_parts(r) for r in rows_to_send]
+
+    return render_template(
+        "sending_confirm.html",
+        config=config_values,
+        preview_rows=preview_rows,
+        already_sent_count=sent_already,
+        checks=checks,
+        has_errors=has_errors,
+        rate_limit=rate_limit,
+        unsubscribe_footer=unsubscribe_footer,
+    )
 
 
 @app.route("/sending/send-approved", methods=["POST"])
@@ -339,12 +463,18 @@ def send_approved_emails():
 
     provider = create_email_provider(config_values)
     provider_name = config_values.get("email_provider", "Mock")
+    rate_limit_seconds = _safe_float(config_values.get("email_rate_limit_seconds"), 1.0)
+    unsubscribe_footer = (config_values.get("email_unsubscribe_footer") or "").strip()
     run_id = create_email_send_run(provider_name, len(approved_rows))
     sent_count = 0
     failed_count = 0
 
-    for row in approved_rows:
+    for i, row in enumerate(approved_rows):
+        if i > 0 and rate_limit_seconds > 0:
+            time.sleep(rate_limit_seconds)
         subject, body = _split_email(row["final_email"])
+        if unsubscribe_footer:
+            body = body.rstrip() + "\n\n--\n" + unsubscribe_footer
         result = provider.send_email(row["contact_email"], subject or "The PreCogs", body)
         if result.success:
             sent_count += 1
@@ -394,6 +524,24 @@ def logs():
     if run and run["log_tail"]:
         lines = run["log_tail"].splitlines()
     return render_template("logs.html", lines=lines, latest_run=run)
+
+
+_FREE_EMAIL_DOMAINS = {
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com",
+    "aol.com", "protonmail.com", "live.com", "msn.com", "me.com",
+}
+
+
+def _is_free_email_domain(email: str) -> bool:
+    domain = email.split("@")[-1].lower() if "@" in email else ""
+    return domain in _FREE_EMAIL_DOMAINS
+
+
+def _safe_float(value: str | None, fallback: float) -> float:
+    try:
+        return max(0.0, float(value or fallback))
+    except (ValueError, TypeError):
+        return fallback
 
 
 def _masked_key(api_key: str) -> str:

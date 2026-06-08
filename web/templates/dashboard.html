@@ -2,130 +2,155 @@
 {% set title = "Dashboard" %}
 
 {% block content %}
-<div class="dashboard-hero mb-4">
-  <div>
-    <div class="dashboard-kicker">AI Lead Research</div>
-    <h1 class="h3 mb-1">Pipeline Dashboard</h1>
-    <p class="text-muted mb-0">Track enrichment runs, review generated drafts, and export only approved emails.</p>
-  </div>
-  <div class="dashboard-actions">
-    <a class="btn btn-primary" href="{{ url_for('pipeline') }}">Run Pipeline</a>
-    {% if latest_output %}
-      <a class="btn btn-outline-primary" href="{{ url_for('review_output', filename=latest_output) }}">Review Latest</a>
+
+{# ── Focus card: what the boss needs to do right now ── #}
+<div class="focus-card {% if state in ['needs_review', 'review_and_send'] %}state-action{% elif state == 'ready_to_send' %}state-send{% elif state == 'complete' %}state-complete{% else %}state-idle{% endif %} mb-4">
+  <div class="focus-card-kicker">Today&rsquo;s task</div>
+  <div class="focus-card-message">
+    {% if state == 'no_run' %}
+      No emails generated yet &mdash; run the pipeline to create today&rsquo;s batch.
+    {% elif state == 'needs_review' %}
+      {{ pending_count }} email{{ 's' if pending_count != 1 }} waiting for your review.
+    {% elif state == 'review_and_send' %}
+      {{ pending_count }} still need review &nbsp;&middot;&nbsp; {{ approved_unsent }} approved and ready to send.
+    {% elif state == 'ready_to_send' %}
+      {{ approved_unsent }} approved email{{ 's' if approved_unsent != 1 }} ready to send.
     {% else %}
-      <a class="btn btn-outline-primary" href="{{ url_for('outputs') }}">View Outputs</a>
+      All done &mdash; no pending reviews or unsent approvals.
+    {% endif %}
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    {% if state == 'no_run' %}
+      <a class="btn btn-lg btn-primary" href="{{ url_for('pipeline') }}">Run Pipeline</a>
+    {% elif state == 'needs_review' and latest_output %}
+      <a class="btn btn-lg btn-primary" href="{{ url_for('review_pending') }}">
+        Review {{ pending_count }} Email{{ 's' if pending_count != 1 }} &rarr;
+      </a>
+    {% elif state == 'review_and_send' %}
+      {% if latest_output %}
+        <a class="btn btn-lg btn-primary" href="{{ url_for('review_pending') }}">
+          Review ({{ pending_count }})
+        </a>
+      {% endif %}
+      <a class="btn btn-lg btn-outline-primary" href="{{ url_for('sending_confirm') }}">
+        Send Approved ({{ approved_unsent }}) &rarr;
+      </a>
+    {% elif state == 'ready_to_send' %}
+      <a class="btn btn-lg btn-primary" href="{{ url_for('sending_confirm') }}">
+        Send {{ approved_unsent }} Email{{ 's' if approved_unsent != 1 }} &rarr;
+      </a>
+      {% if latest_output %}
+        <a class="btn btn-lg btn-outline-secondary" href="{{ url_for('review_output', filename=latest_output) if latest_output else url_for('outputs') }}?status=approved">
+          View Approved
+        </a>
+      {% endif %}
+    {% else %}
+      <a class="btn btn-outline-primary" href="{{ url_for('pipeline') }}">Run New Batch</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('sending') }}">Send History</a>
     {% endif %}
   </div>
 </div>
 
+{# ── Workflow track: Generate → Review → Send ── #}
+{% set gen_done = latest_run and latest_run.status == 'completed' %}
+{% set gen_running = latest_run and latest_run.status == 'running' %}
+<div class="workflow-track mb-4">
+
+  <a class="wt-step text-decoration-none {% if gen_done %}wt-done{% elif gen_running %}wt-action{% else %}wt-idle{% endif %}"
+     href="{{ url_for('pipeline') }}">
+    <div class="wt-step-label">1 &nbsp; Generate</div>
+    <div class="wt-step-count">{{ latest_run.limit_count if latest_run else "&mdash;" }}</div>
+    <div class="wt-step-sub">
+      {% if gen_done %}generated
+      {% elif gen_running %}running&hellip;
+      {% else %}not started{% endif %}
+    </div>
+  </a>
+
+  <div class="wt-arrow">&rarr;</div>
+
+  <a class="wt-step text-decoration-none {% if pending_count > 0 %}wt-action{% elif counts.total_leads > 0 %}wt-done{% else %}wt-idle{% endif %}"
+     href="{% if latest_output %}{{ url_for('review_pending') }}{% else %}{{ url_for('outputs') }}{% endif %}">
+    <div class="wt-step-label">2 &nbsp; Review</div>
+    <div class="wt-step-count">{{ pending_count }}</div>
+    <div class="wt-step-sub">{% if pending_count > 0 %}need review{% else %}all reviewed{% endif %}</div>
+  </a>
+
+  <div class="wt-arrow">&rarr;</div>
+
+  <a class="wt-step text-decoration-none {% if approved_unsent > 0 %}wt-action{% elif counts.total_sent > 0 %}wt-done{% else %}wt-idle{% endif %}"
+     href="{{ url_for('sending_confirm') if approved_unsent > 0 else url_for('sending') }}">
+    <div class="wt-step-label">3 &nbsp; Send</div>
+    <div class="wt-step-count">{{ counts.total_sent }}</div>
+    <div class="wt-step-sub">
+      sent{% if approved_unsent > 0 %} &nbsp;&middot;&nbsp; {{ approved_unsent }} ready{% endif %}
+    </div>
+  </a>
+
+</div>
+
+{# ── Compact metrics ── #}
 <div class="row g-3 mb-4">
-  <div class="col-md-3">
-    <div class="metric metric-primary">
-      <span>Reviewable Emails</span>
-      <strong>{{ counts.total_leads }}</strong>
-      <small>Drafts ready for human review</small>
-    </div>
+  <div class="col-6 col-md-3">
+    <a class="metric metric-primary text-decoration-none d-block" href="{{ url_for('review_pending') }}">
+      <span>Pending Review</span>
+      <strong>{{ pending_count }}</strong>
+      <small>Drafts awaiting approval</small>
+    </a>
   </div>
-  <div class="col-md-3">
-    <div class="metric">
-      <span>Processed Attempts</span>
-      <strong>{{ counts.total_processed }}</strong>
-      <small>Completed run limit total</small>
-    </div>
+  <div class="col-6 col-md-3">
+    <a class="metric metric-approved text-decoration-none d-block"
+       href="{{ url_for('sending_confirm') if approved_unsent > 0 else url_for('sending') }}">
+      <span>Approved &amp; Unsent</span>
+      <strong>{{ approved_unsent }}</strong>
+      <small>Ready to send now</small>
+    </a>
   </div>
-  <div class="col-md-3">
-    <div class="metric metric-approved">
-      <span>Approved Emails</span>
-      <strong>{{ counts.total_approved }}</strong>
-      <small>Ready for future sending</small>
-    </div>
+  <div class="col-6 col-md-3">
+    <a class="metric metric-sent text-decoration-none d-block" href="{{ url_for('sending') }}">
+      <span>Emails Sent</span>
+      <strong>{{ counts.total_sent }}</strong>
+      <small>Successfully delivered</small>
+    </a>
   </div>
-  <div class="col-md-3">
-    <div class="metric metric-rejected">
-      <span>Rejected Emails</span>
-      <strong>{{ counts.total_rejected }}</strong>
-      <small>Removed from export</small>
-    </div>
+  <div class="col-6 col-md-3">
+    <a class="metric {% if counts.total_failed > 0 %}metric-rejected{% else %}metric-failed{% endif %} text-decoration-none d-block"
+       href="{{ url_for('sending') }}">
+      <span>Send Failures</span>
+      <strong>{{ counts.total_failed }}</strong>
+      <small>Failed delivery attempts</small>
+    </a>
   </div>
 </div>
 
-<div class="row g-3 align-items-stretch">
-  <div class="col-lg-7">
-    <div class="card dashboard-card h-100">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
-          <div>
-            <h2 class="h5 mb-1">Latest Pipeline Run</h2>
-            <div class="text-muted small">Most recent orchestration from the UI</div>
-          </div>
-          {% if latest_run %}
-            <span class="badge status-badge status-{{ latest_run.status }}">{{ latest_run.status }}</span>
-          {% endif %}
+{# ── Latest pipeline run (reference, not primary) ── #}
+{% if latest_run %}
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+      <div>
+        <div class="fw-semibold mb-1">Latest Pipeline Run</div>
+        <div class="text-muted small">
+          Started {{ latest_run.started_at or "—" }}
+          &nbsp;&middot;&nbsp; {{ latest_run.limit_count or "?" }} leads
+          &nbsp;&middot;&nbsp; {{ latest_run.output_file or "no output yet" }}
         </div>
-        {% if latest_run %}
-          <div class="run-detail-grid">
-            <div>
-              <span>Started</span>
-              <strong>{{ latest_run.started_at or "-" }}</strong>
-            </div>
-            <div>
-              <span>Ended</span>
-              <strong>{{ latest_run.ended_at or "-" }}</strong>
-            </div>
-            <div>
-              <span>Limit</span>
-              <strong>{{ latest_run.limit_count or "-" }}</strong>
-            </div>
-            <div>
-              <span>Output</span>
-              <strong>{{ latest_run.output_file or "-" }}</strong>
-            </div>
-          </div>
-          <div class="mt-3 d-flex flex-wrap gap-2">
-            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('pipeline') }}">Open Pipeline</a>
-            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('logs') }}">View Latest Log</a>
-          </div>
-        {% else %}
-          <p class="text-muted mb-0">No pipeline runs yet.</p>
-        {% endif %}
       </div>
-    </div>
-  </div>
-  <div class="col-lg-5">
-    <div class="card dashboard-card h-100">
-      <div class="card-body">
-        <h2 class="h5 mb-1">Latest Output</h2>
-        <div class="text-muted small mb-3">Open the newest CSV review queue</div>
-        {% if latest_output %}
-          <div class="latest-output-name">{{ latest_output }}</div>
-          <div class="d-flex flex-wrap gap-2 mt-3">
-            <a class="btn btn-primary btn-sm" href="{{ url_for('review_output', filename=latest_output) }}">Open Review</a>
-            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('outputs') }}">All Outputs</a>
-          </div>
-        {% else %}
-          <p class="text-muted mb-3">No output files found.</p>
-          <a class="btn btn-primary btn-sm" href="{{ url_for('pipeline') }}">Create First Output</a>
-        {% endif %}
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span class="badge status-badge status-{{ latest_run.status }}">{{ latest_run.status }}</span>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('pipeline') }}">Pipeline</a>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('logs') }}">Logs</a>
       </div>
     </div>
   </div>
 </div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center py-4">
+    <p class="text-muted mb-3">No pipeline runs yet. Generate your first batch of leads to get started.</p>
+    <a class="btn btn-primary" href="{{ url_for('pipeline') }}">Run Pipeline</a>
+  </div>
+</div>
+{% endif %}
 
-<div class="dashboard-workflow mt-4">
-  <div>
-    <span>1</span>
-    <strong>Generate or import leads</strong>
-    <p>Use the configured input CSV or create a fresh batch.</p>
-  </div>
-  <div>
-    <span>2</span>
-    <strong>Research and draft</strong>
-    <p>The CLI pipeline enriches companies and creates personalized emails.</p>
-  </div>
-  <div>
-    <span>3</span>
-    <strong>Review and export</strong>
-    <p>Approve only the drafts that should enter the future sending flow.</p>
-  </div>
-</div>
 {% endblock %}

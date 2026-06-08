@@ -24,6 +24,8 @@ DEFAULT_CONFIG = {
     "email_from_email": "",
     "email_from_name": "The PreCogs",
     "email_reply_to": "",
+    "email_rate_limit_seconds": "1.0",
+    "email_unsubscribe_footer": "To opt out of future emails, reply with 'Unsubscribe' in the subject line.",
 }
 
 
@@ -242,11 +244,19 @@ def dashboard_counts() -> dict[str, int]:
         processed = conn.execute(
             "SELECT COALESCE(SUM(limit_count), 0) AS count FROM pipeline_runs WHERE status = 'completed'"
         ).fetchone()["count"]
+        total_sent = conn.execute(
+            "SELECT COUNT(*) AS count FROM reviewed_emails WHERE email_send_status = 'sent'"
+        ).fetchone()["count"]
+        total_failed = conn.execute(
+            "SELECT COUNT(*) AS count FROM reviewed_emails WHERE email_send_status = 'failed'"
+        ).fetchone()["count"]
     return {
         "total_leads": total_leads,
         "total_processed": int(processed or 0),
         "total_approved": approved,
         "total_rejected": rejected,
+        "total_sent": total_sent,
+        "total_failed": total_failed,
     }
 
 
@@ -376,6 +386,71 @@ def approved_emails_for_sending() -> list[sqlite3.Row]:
               AND TRIM(COALESCE(final_email, '')) != ''
               AND COALESCE(email_send_status, 'not_sent') != 'sent'
             ORDER BY filename, row_number
+            """
+        ).fetchall()
+
+
+def pending_review_count() -> int:
+    """Emails with a draft that still need the boss's review (across all imported files)."""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS count FROM reviewed_emails "
+            "WHERE status = 'pending' AND TRIM(COALESCE(final_email, '')) != ''"
+        ).fetchone()["count"]
+
+
+def all_pending_emails() -> list[sqlite3.Row]:
+    """All pending-status emails with a draft, across every imported file."""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM reviewed_emails "
+            "WHERE status = 'pending' AND TRIM(COALESCE(final_email, '')) != '' "
+            "ORDER BY filename, row_number"
+        ).fetchall()
+
+
+def approved_unsent_count() -> int:
+    """Approved emails with a recipient that have not been sent yet."""
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM reviewed_emails
+            WHERE status = 'approved'
+              AND TRIM(COALESCE(contact_email, '')) != ''
+              AND TRIM(COALESCE(final_email, '')) != ''
+              AND COALESCE(email_send_status, 'not_sent') != 'sent'
+            """
+        ).fetchone()["count"]
+
+
+def already_sent_count() -> int:
+    """Count approved emails that have already been sent (skipped on next send run)."""
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM reviewed_emails
+            WHERE status = 'approved'
+              AND TRIM(COALESCE(contact_email, '')) != ''
+              AND TRIM(COALESCE(final_email, '')) != ''
+              AND email_send_status = 'sent'
+            """
+        ).fetchone()["count"]
+
+
+def approved_emails_with_send_status() -> list[sqlite3.Row]:
+    """All approved emails (with contact+draft) showing their send status."""
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT id, company, contact_email, final_email, status,
+                   email_send_status, email_sent_at, email_last_error
+            FROM reviewed_emails
+            WHERE status = 'approved'
+              AND TRIM(COALESCE(contact_email, '')) != ''
+              AND TRIM(COALESCE(final_email, '')) != ''
+            ORDER BY email_sent_at DESC, id
             """
         ).fetchall()
 
