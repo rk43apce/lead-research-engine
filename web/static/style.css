@@ -481,6 +481,11 @@ a:hover {
   font-size: 0.8rem;
 }
 
+.send-error-cell {
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+
 .email-editor {
   height: clamp(190px, 36vh, 400px);
   min-height: 190px;

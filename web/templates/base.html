@@ -27,6 +27,7 @@
             <li class="nav-item"><a class="nav-link {% if request.endpoint == 'config' %}active{% endif %}" href="{{ url_for('config') }}">Config</a></li>
             <li class="nav-item"><a class="nav-link {% if request.endpoint == 'pipeline' %}active{% endif %}" href="{{ url_for('pipeline') }}">Pipeline</a></li>
             <li class="nav-item"><a class="nav-link {% if request.endpoint in ['outputs', 'review_output'] %}active{% endif %}" href="{{ url_for('outputs') }}">Outputs</a></li>
+            <li class="nav-item"><a class="nav-link {% if request.endpoint in ['sending', 'sending_settings', 'sending_config_post', 'send_approved_emails'] %}active{% endif %}" href="{{ url_for('sending') }}">Sending</a></li>
             <li class="nav-item"><a class="nav-link {% if request.endpoint == 'logs' %}active{% endif %}" href="{{ url_for('logs') }}">Logs</a></li>
           </ul>
           <div class="navbar-user">
@@ -61,6 +62,7 @@
         </div>
         <div class="footer-links">
           <a href="{{ url_for('outputs') }}">Review Emails</a>
+          <a href="{{ url_for('sending') }}">Send Approved</a>
           <a href="{{ url_for('pipeline') }}">Pipeline Runs</a>
           <a href="{{ url_for('logs') }}">Logs</a>
         </div>

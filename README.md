@@ -225,7 +225,7 @@ The review screen is the human-in-the-loop step. Generated emails start as `pend
 - reject an email
 - edit and save a modified email
 
-Only rows with `status = approved` are exported for the future email sending module. The UI does not send emails.
+Only rows with `status = approved` are exported or sent by the sending module.
 
 To create the approved export, click `Export Approved Emails` from the output or review page. This writes:
 
@@ -240,3 +240,52 @@ Exported fields:
 - `contact_email`
 - `final_email`
 - `status`
+
+### Email Sending
+
+The UI includes a vendor-neutral email sending controller at:
+
+```text
+/sending
+```
+
+The sending page lets an admin configure:
+
+- email provider
+- provider API key
+- from email
+- from name
+- reply-to email
+
+Supported providers:
+
+- `Mock`: records a successful send without calling an external service
+- `Twilio SendGrid`: sends through the SendGrid Mail Send API
+
+Only approved rows with both `contact_email` and `final_email` are eligible to send. This keeps the human-in-the-loop approval step mandatory before any vendor call.
+
+For Twilio SendGrid, configure these fields in the UI or store the key in SQLite through the UI:
+
+```text
+Provider: Twilio SendGrid
+Provider API key: your SendGrid API key
+From email: verified sender email
+From name: The PreCogs
+Reply-to email: optional
+```
+
+The sender can also read these optional `.env` values when UI fields are blank:
+
+```text
+SENDGRID_API_KEY
+EMAIL_FROM_EMAIL
+EMAIL_FROM_NAME
+EMAIL_REPLY_TO
+```
+
+Send history is stored in SQLite:
+
+- `email_send_runs`
+- `email_send_events`
+
+The sender is intentionally wrapped behind `web/email_sender.py` so another provider can be added later without changing the review workflow.

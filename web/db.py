@@ -19,6 +19,11 @@ DEFAULT_CONFIG = {
     "output_csv_path": "output/enriched_leads.csv",
     "number_of_leads": "5",
     "max_concurrency": "2",
+    "email_provider": "Mock",
+    "email_api_key": "",
+    "email_from_email": "",
+    "email_from_name": "The PreCogs",
+    "email_reply_to": "",
 }
 
 
@@ -81,8 +86,45 @@ def init_db() -> None:
                 original_email TEXT,
                 final_email TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
+                email_send_status TEXT NOT NULL DEFAULT 'not_sent',
+                email_sent_at TEXT,
+                email_last_error TEXT,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(filename, row_number)
+            )
+            """
+        )
+        _ensure_column(conn, "reviewed_emails", "email_send_status", "TEXT NOT NULL DEFAULT 'not_sent'")
+        _ensure_column(conn, "reviewed_emails", "email_sent_at", "TEXT")
+        _ensure_column(conn, "reviewed_emails", "email_last_error", "TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_send_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider TEXT NOT NULL,
+                status TEXT NOT NULL,
+                total_count INTEGER NOT NULL DEFAULT 0,
+                sent_count INTEGER NOT NULL DEFAULT 0,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                ended_at TEXT,
+                error_message TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS email_send_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                reviewed_email_id INTEGER NOT NULL,
+                company TEXT,
+                recipient_email TEXT,
+                status TEXT NOT NULL,
+                provider_message_id TEXT,
+                error_message TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(run_id) REFERENCES email_send_runs(id)
             )
             """
         )
@@ -321,3 +363,106 @@ def export_approved_emails() -> Path:
         for row in rows:
             writer.writerow(dict(row))
     return export_path
+
+
+def approved_emails_for_sending() -> list[sqlite3.Row]:
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT id, company, source_url, contact_email, final_email, status
+            FROM reviewed_emails
+            WHERE status = 'approved'
+              AND TRIM(COALESCE(contact_email, '')) != ''
+              AND TRIM(COALESCE(final_email, '')) != ''
+              AND COALESCE(email_send_status, 'not_sent') != 'sent'
+            ORDER BY filename, row_number
+            """
+        ).fetchall()
+
+
+def create_email_send_run(provider: str, total_count: int) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO email_send_runs (provider, status, total_count)
+            VALUES (?, 'running', ?)
+            """,
+            (provider, total_count),
+        )
+        return int(cursor.lastrowid)
+
+
+def record_email_send_event(
+    run_id: int,
+    reviewed_email_id: int,
+    company: str,
+    recipient_email: str,
+    status: str,
+    provider_message_id: str = "",
+    error_message: str = "",
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO email_send_events (
+                run_id, reviewed_email_id, company, recipient_email, status,
+                provider_message_id, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (run_id, reviewed_email_id, company, recipient_email, status, provider_message_id, error_message),
+        )
+
+
+def mark_reviewed_email_send_status(email_id: int, status: str, error_message: str = "") -> None:
+    with get_connection() as conn:
+        if status == "sent":
+            conn.execute(
+                """
+                UPDATE reviewed_emails
+                SET email_send_status = ?, email_sent_at = datetime('now'), email_last_error = ''
+                WHERE id = ?
+                """,
+                (status, email_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE reviewed_emails
+                SET email_send_status = ?, email_last_error = ?
+                WHERE id = ?
+                """,
+                (status, error_message, email_id),
+            )
+
+
+def finish_email_send_run(run_id: int, status: str, sent_count: int, failed_count: int, error_message: str = "") -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE email_send_runs
+            SET status = ?, sent_count = ?, failed_count = ?, ended_at = datetime('now'),
+                error_message = ?
+            WHERE id = ?
+            """,
+            (status, sent_count, failed_count, error_message, run_id),
+        )
+
+
+def latest_email_send_run() -> sqlite3.Row | None:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM email_send_runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+
+def recent_email_send_events(limit: int = 25) -> list[sqlite3.Row]:
+    with get_connection() as conn:
+        return conn.execute(
+            """
+            SELECT *
+            FROM email_send_events
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()

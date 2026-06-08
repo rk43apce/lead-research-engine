@@ -10,20 +10,28 @@ from web.auth import expected_password, expected_username, login_required
 from web.db import (
     BASE_DIR,
     all_runs,
+    approved_emails_for_sending,
+    create_email_send_run,
     create_pipeline_run,
     dashboard_counts,
     export_approved_emails,
+    finish_email_send_run,
     get_config,
     init_db,
+    latest_email_send_run,
     latest_output_file,
     latest_run,
     list_output_files,
+    mark_reviewed_email_send_status,
+    recent_email_send_events,
+    record_email_send_event,
     reviewed_rows,
     safe_output_path,
     save_config,
     set_email_status,
     update_email,
 )
+from web.email_sender import create_email_provider
 from web.pipeline_runner import start_pipeline
 
 
@@ -273,6 +281,98 @@ def update_reviewed_email(email_id):
 def export_approved():
     path = export_approved_emails()
     return _download_approved_export(path)
+
+
+@app.route("/sending")
+@login_required
+def sending():
+    config_values = get_config()
+    approved_rows = approved_emails_for_sending()
+    return render_template(
+        "sending.html",
+        config=config_values,
+        approved_count=len(approved_rows),
+        latest_send_run=latest_email_send_run(),
+        send_events=recent_email_send_events(),
+    )
+
+
+@app.route("/sending/settings")
+@login_required
+def sending_settings():
+    config_values = get_config()
+    return render_template(
+        "sending_settings.html",
+        config=config_values,
+        masked_email_key=_masked_key(config_values.get("email_api_key", "") or os.getenv("SENDGRID_API_KEY", "")),
+    )
+
+
+@app.route("/sending/config", methods=["POST"])
+@login_required
+def sending_config_post():
+    existing = get_config()
+    api_key = request.form.get("email_api_key", "")
+    if api_key.strip() == "":
+        api_key = existing.get("email_api_key", "")
+    save_config(
+        {
+            "email_provider": request.form.get("email_provider", "Mock"),
+            "email_api_key": api_key,
+            "email_from_email": request.form.get("email_from_email", ""),
+            "email_from_name": request.form.get("email_from_name", "The PreCogs"),
+            "email_reply_to": request.form.get("email_reply_to", ""),
+        }
+    )
+    flash("Email provider settings saved.", "success")
+    return redirect(url_for("sending_settings"))
+
+
+@app.route("/sending/send-approved", methods=["POST"])
+@login_required
+def send_approved_emails():
+    config_values = get_config()
+    approved_rows = approved_emails_for_sending()
+    if not approved_rows:
+        flash("No approved emails with recipient email IDs are ready to send.", "warning")
+        return redirect(url_for("sending"))
+
+    provider = create_email_provider(config_values)
+    provider_name = config_values.get("email_provider", "Mock")
+    run_id = create_email_send_run(provider_name, len(approved_rows))
+    sent_count = 0
+    failed_count = 0
+
+    for row in approved_rows:
+        subject, body = _split_email(row["final_email"])
+        result = provider.send_email(row["contact_email"], subject or "The PreCogs", body)
+        if result.success:
+            sent_count += 1
+            mark_reviewed_email_send_status(row["id"], "sent")
+            record_email_send_event(
+                run_id,
+                row["id"],
+                row["company"] or "",
+                row["contact_email"] or "",
+                "sent",
+                provider_message_id=result.provider_message_id,
+            )
+        else:
+            failed_count += 1
+            mark_reviewed_email_send_status(row["id"], "failed", result.error_message)
+            record_email_send_event(
+                run_id,
+                row["id"],
+                row["company"] or "",
+                row["contact_email"] or "",
+                "failed",
+                error_message=result.error_message,
+            )
+
+    status = "completed" if failed_count == 0 else "completed_with_errors"
+    finish_email_send_run(run_id, status, sent_count, failed_count)
+    flash("Send run finished: %s sent, %s failed." % (sent_count, failed_count), "success" if failed_count == 0 else "warning")
+    return redirect(url_for("sending"))
 
 
 def _download_approved_export(path):

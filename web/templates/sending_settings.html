@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set title = "Email Provider Settings" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">Email Provider Settings</h1>
+    <div class="text-muted">Configure the vendor used by the approved email sending controller.</div>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('sending') }}">Back to Sending</a>
+</div>
+
+<form method="post" action="{{ url_for('sending_config_post') }}" class="card">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label" for="email_provider">Email provider</label>
+        <select class="form-select" id="email_provider" name="email_provider">
+          {% for provider in ["Mock", "Twilio SendGrid"] %}
+            <option value="{{ provider }}" {% if config.email_provider == provider %}selected{% endif %}>{{ provider }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="email_api_key">Provider API key</label>
+        <input class="form-control" id="email_api_key" name="email_api_key" type="password" placeholder="{{ masked_email_key }}">
+        <div class="form-text">Leave blank to keep the saved key or provider key from .env. Full key is never displayed.</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="email_from_email">From email</label>
+        <input class="form-control" id="email_from_email" name="email_from_email" value="{{ config.email_from_email }}" placeholder="sender@example.com">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="email_from_name">From name</label>
+        <input class="form-control" id="email_from_name" name="email_from_name" value="{{ config.email_from_name }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="email_reply_to">Reply-to email</label>
+        <input class="form-control" id="email_reply_to" name="email_reply_to" value="{{ config.email_reply_to }}" placeholder="optional">
+      </div>
+    </div>
+    <div class="mt-4 d-flex flex-wrap gap-2">
+      <button class="btn btn-primary" type="submit">Save Provider</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('sending') }}">Cancel</a>
+    </div>
+  </div>
+</form>
+{% endblock %}
