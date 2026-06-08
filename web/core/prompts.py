@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from services.models import ResearchContext
+from web.core.models import ResearchContext
 
 
 def research_prompt(context: ResearchContext) -> str:

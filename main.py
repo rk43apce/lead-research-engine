@@ -2,10 +2,10 @@ import asyncio
 import argparse
 from datetime import datetime
 
-from services.config import Settings
-from services.logger import configure_logging, log_info
-from services.output import write_output
-from services.pipeline import run_pipeline
+from web.core.config import Settings
+from web.core.logger import configure_logging, log_info
+from web.core.output import write_output
+from web.core.pipeline import run_pipeline
 
 
 def main() -> None:

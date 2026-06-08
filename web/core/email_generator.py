@@ -1,9 +1,9 @@
 import time
 
-from services.llm import LLMClient
-from services.logger import log_error, log_info, log_timing, log_warning
-from services.models import EmailDraft, LLMResearchOutput, ResearchContext
-from services.prompts import email_prompt, research_prompt
+from web.core.llm import LLMClient
+from web.core.logger import log_error, log_info, log_timing, log_warning
+from web.core.models import EmailDraft, LLMResearchOutput, ResearchContext
+from web.core.prompts import email_prompt, research_prompt
 
 
 class LeadContentGenerator:

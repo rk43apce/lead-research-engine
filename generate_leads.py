@@ -3,8 +3,8 @@ import asyncio
 import os
 from pathlib import Path
 
-from services.lead_sourcing import LeadSourceGenerator
-from services.logger import configure_logging, log_info
+from web.core.lead_sourcing import LeadSourceGenerator
+from web.core.logger import configure_logging, log_info
 
 try:
     from dotenv import load_dotenv

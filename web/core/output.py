@@ -4,8 +4,8 @@ from typing import List
 
 import pandas as pd
 
-from services.logger import log_info, log_timing
-from services.models import EnrichedLead
+from web.core.logger import log_info, log_timing
+from web.core.models import EnrichedLead
 
 
 def write_output(path: Path, rows: List[EnrichedLead]):

@@ -9,8 +9,8 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from services.llm import OpenAIClient
-from services.logger import log_info, log_warning
+from web.core.llm import OpenAIClient
+from web.core.logger import log_info, log_warning
 
 
 @dataclass

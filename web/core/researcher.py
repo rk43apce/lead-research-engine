@@ -3,9 +3,9 @@ import time
 from typing import Optional
 from urllib.parse import urlparse
 
-from services.logger import log_info, log_timing, log_warning
-from services.models import ContactEmail, PageContent, PageLink, PublicSignal, ResearchContext, ResearchFacts, SignalType
-from services.scraper import AsyncScraper
+from web.core.logger import log_info, log_timing, log_warning
+from web.core.models import ContactEmail, PageContent, PageLink, PublicSignal, ResearchContext, ResearchFacts, SignalType
+from web.core.scraper import AsyncScraper
 
 
 SOURCE_LINK_KEYWORDS = [

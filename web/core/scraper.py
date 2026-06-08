@@ -5,8 +5,8 @@ from urllib.parse import urldefrag, urljoin, urlparse
 import aiohttp
 from bs4 import BeautifulSoup
 
-from services.logger import log_error, log_warning
-from services.models import PageContent, PageLink
+from web.core.logger import log_error, log_warning
+from web.core.models import PageContent, PageLink
 
 
 DEFAULT_HEADERS = {

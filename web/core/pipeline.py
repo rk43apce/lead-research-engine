@@ -4,15 +4,15 @@ import asyncio
 import time
 from pathlib import Path
 
-from services.config import Settings
-from services.email_generator import LeadContentGenerator
-from services.lead import load_leads
-from services.llm import create_llm_client
-from services.logger import log_error, log_timing
-from services.models import EnrichedLead, Lead
-from services.researcher import CompanyResearcher
-from services.scraper import AsyncScraper
-from services.validator import LeadValidator
+from web.core.config import Settings
+from web.core.email_generator import LeadContentGenerator
+from web.core.lead import load_leads
+from web.core.llm import create_llm_client
+from web.core.logger import log_error, log_timing
+from web.core.models import EnrichedLead, Lead
+from web.core.researcher import CompanyResearcher
+from web.core.scraper import AsyncScraper
+from web.core.validator import LeadValidator
 
 
 async def process_lead(

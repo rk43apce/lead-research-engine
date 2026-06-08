@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Protocol
 
 import aiohttp
 
-from services.logger import log_info, log_timing, log_warning
+from web.core.logger import log_info, log_timing, log_warning
 
 
 class LLMClient(Protocol):

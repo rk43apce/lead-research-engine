@@ -22,16 +22,22 @@ It is a lead research and personalization system, not a fraud detection system.
 .
 ├── input/
 ├── output/
-├── services/
-│   ├── scraper.py
-│   ├── researcher.py
-│   ├── llm.py
-│   ├── email_generator.py
-│   ├── validator.py
-│   ├── prompts.py
-│   ├── config.py
-│   ├── logger.py
-│   └── models.py
+├── web/
+│   ├── app.py
+│   ├── db.py
+│   ├── pipeline_runner.py
+│   ├── core/
+│   │   ├── scraper.py
+│   │   ├── researcher.py
+│   │   ├── llm.py
+│   │   ├── email_generator.py
+│   │   ├── validator.py
+│   │   ├── prompts.py
+│   │   ├── config.py
+│   │   ├── logger.py
+│   │   └── models.py
+│   ├── templates/
+│   └── static/
 ├── main.py
 ├── requirements.txt
 └── .env.example
@@ -154,7 +160,7 @@ This version does not perform web search, so it only discovers signals linked fr
 
 ## Demo Flask UI
 
-The Flask UI is a lightweight orchestration layer around the existing CLI pipeline. It does not rewrite the research, validation, or email generation services. The CLI remains the source of truth, and the UI simply starts runs, stores demo state in SQLite, and adds a human review step.
+The Flask UI is the main application shell. The core research, validation, lead sourcing, and email generation modules live under `web/core`, and the UI starts those modules directly in a background thread. The small root-level CLI files are kept as compatibility wrappers.
 
 ### UI Setup
 
@@ -189,18 +195,22 @@ http://127.0.0.1:5000
 - `/login` uses the hardcoded admin credentials from `.env` and Flask session auth.
 - `/` shows total reviewed leads, processed runs, approved emails, rejected emails, latest run status, and latest output CSV.
 - `/config` stores provider, API key, model, CSV paths, lead limit, and concurrency in SQLite. API keys are masked in the UI.
-- `/pipeline` starts the existing CLI with `python main.py --limit X`, records status in SQLite, and captures subprocess output.
+- `/pipeline` starts the `web/core` pipeline directly, records status/progress in SQLite, and writes the generated output CSV.
 - `/outputs` lists CSV files in `output/`.
 - `/outputs/<filename>` imports a CSV into the review table and lets a human approve, reject, or modify email drafts.
-- `/logs` shows the last 200 lines from `logs/app.log`.
+- `/logs` shows the latest pipeline run log captured in SQLite.
 
 ### LLM Provider Settings
 
 For demo use, choose `Mock` in the UI. It uses no network and no API key.
 
-For real providers, choose `Gemini` or `Groq` and save the API key/model in the UI. The UI maps those values to the CLI subprocess environment:
+For real providers, choose `OpenAI`, `Anthropic`, `Gemini`, or `Groq` and save the API key/model in the UI. The UI maps those values to the core pipeline settings:
 
 ```text
+OPENAI_API_KEY
+OPENAI_MODEL
+ANTHROPIC_API_KEY
+ANTHROPIC_MODEL
 GEMINI_API_KEY
 GEMINI_MODEL
 GROQ_API_KEY

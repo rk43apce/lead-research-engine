@@ -1,7 +1,7 @@
 import re
 
-from services.logger import log_warning
-from services.models import EmailDraft, PublicSignal, SignalType
+from web.core.logger import log_warning
+from web.core.models import EmailDraft, PublicSignal, SignalType
 
 
 MAX_EMAIL_WORDS = 120

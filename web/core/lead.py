@@ -3,8 +3,8 @@ from typing import List, Optional
 
 import pandas as pd
 
-from services.logger import log_error, log_warning
-from services.models import Lead
+from web.core.logger import log_error, log_warning
+from web.core.models import Lead
 
 
 def load_leads(path: Path, limit: Optional[int] = None):
