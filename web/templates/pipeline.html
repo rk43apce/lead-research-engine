@@ -9,13 +9,13 @@
 
 <div class="card mb-4">
   <div class="card-body">
-    <form method="post" action="{{ url_for('pipeline_run') }}" class="row g-3 align-items-end">
+    <form method="post" action="{{ url_for('pipeline_run') }}" class="row g-3 align-items-end pipeline-run-form">
       <div class="col-md-4">
         <label class="form-label" for="limit_count">Leads to process</label>
         <input class="form-control" id="limit_count" name="limit_count" type="number" min="1" value="{{ config.number_of_leads }}">
       </div>
-      <div class="col-md-8">
-        <div class="d-flex flex-wrap gap-2">
+      <div class="col-md-8 pipeline-run-actions">
+        <div class="d-flex flex-wrap gap-2 justify-content-md-end">
           <button class="btn btn-primary" type="submit" name="action" value="run_existing">
             Start Pipeline
           </button>
@@ -23,9 +23,9 @@
             Generate Leads + Start Pipeline
           </button>
         </div>
-        <div class="form-text">
-          Start Pipeline uses the existing input CSV. Generate Leads + Start Pipeline creates a fresh input CSV first.
-        </div>
+      </div>
+      <div class="col-12">
+        <div class="form-text mb-0">Start Pipeline uses the existing input CSV. Generate Leads + Start Pipeline creates a fresh input CSV first.</div>
       </div>
     </form>
   </div>
@@ -34,11 +34,23 @@
 {% if latest_run %}
 <div class="card mb-4">
   <div class="card-body">
-    <h2 class="h5">Latest Run</h2>
-    <p><span class="badge text-bg-secondary">{{ latest_run.status }}</span></p>
-    <p class="mb-1">Started: {{ latest_run.started_at or "-" }}</p>
-    <p class="mb-1">Ended: {{ latest_run.ended_at or "-" }}</p>
-    <p class="mb-1">Output: {{ latest_run.output_file or "-" }}</p>
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        <h2 class="h5 mb-1">Latest Run</h2>
+        <div class="text-muted small" id="latestRunMessage">{{ latest_run.progress_message or latest_run.status }}</div>
+      </div>
+      <span class="badge status-badge status-{{ latest_run.status }}" id="latestRunStatus">{{ latest_run.status }}</span>
+    </div>
+    <div class="pipeline-progress mb-3">
+      <div class="progress" id="latestRunProgress" role="progressbar" aria-label="Pipeline progress" aria-valuenow="{{ latest_run.progress_percent or 0 }}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar progress-bar-striped {% if latest_run.status == 'running' %}progress-bar-animated{% endif %} {% if latest_run.status == 'failed' %}bg-danger{% endif %}" id="latestRunProgressBar" style="width: {{ latest_run.progress_percent or 0 }}%">
+          {{ latest_run.progress_percent or 0 }}%
+        </div>
+      </div>
+    </div>
+    <p class="mb-1">Started: <span id="latestRunStarted">{{ latest_run.started_at or "-" }}</span></p>
+    <p class="mb-1">Ended: <span id="latestRunEnded">{{ latest_run.ended_at or "-" }}</span></p>
+    <p class="mb-1">Output: <span id="latestRunOutput">{{ latest_run.output_file or "-" }}</span></p>
     {% if latest_run.error_message %}
       <pre class="log-box mt-3">{{ latest_run.error_message }}</pre>
     {% endif %}
@@ -55,6 +67,7 @@
         <th>Limit</th>
         <th>Started</th>
         <th>Ended</th>
+        <th>Progress</th>
         <th>Output</th>
       </tr>
     </thead>
@@ -66,10 +79,78 @@
         <td>{{ run.limit_count }}</td>
         <td>{{ run.started_at or "-" }}</td>
         <td>{{ run.ended_at or "-" }}</td>
+        <td class="run-progress-cell">
+          <div class="progress" role="progressbar" aria-label="Run progress" aria-valuenow="{{ run.progress_percent or 0 }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar {% if run.status == 'failed' %}bg-danger{% endif %}" style="width: {{ run.progress_percent or 0 }}%"></div>
+          </div>
+          <span>{{ run.progress_percent or 0 }}%</span>
+        </td>
         <td>{{ run.output_file or "-" }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if latest_run and latest_run.status in ["pending", "running"] %}
+<script>
+  var statusUrl = "{{ url_for('pipeline_status') }}";
+  var progressTimer = null;
+
+  function updateLatestRunProgress(data) {
+    if (!data.has_run) {
+      return;
+    }
+
+    var statusBadge = document.getElementById("latestRunStatus");
+    var message = document.getElementById("latestRunMessage");
+    var progress = document.getElementById("latestRunProgress");
+    var progressBar = document.getElementById("latestRunProgressBar");
+    var started = document.getElementById("latestRunStarted");
+    var ended = document.getElementById("latestRunEnded");
+    var output = document.getElementById("latestRunOutput");
+
+    if (message) {
+      message.textContent = data.progress_message || data.status;
+    }
+    if (statusBadge) {
+      statusBadge.textContent = data.status;
+      statusBadge.className = "badge status-badge status-" + data.status;
+    }
+    if (progress && progressBar) {
+      progress.setAttribute("aria-valuenow", data.progress_percent);
+      progressBar.style.width = data.progress_percent + "%";
+      progressBar.textContent = data.progress_percent + "%";
+      progressBar.classList.toggle("progress-bar-animated", data.status === "running");
+      progressBar.classList.toggle("bg-danger", data.status === "failed");
+    }
+    if (started) {
+      started.textContent = data.started_at;
+    }
+    if (ended) {
+      ended.textContent = data.ended_at;
+    }
+    if (output) {
+      output.textContent = data.output_file;
+    }
+
+    if (data.status !== "pending" && data.status !== "running" && progressTimer) {
+      window.clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  }
+
+  function pollLatestRunProgress() {
+    fetch(statusUrl, {headers: {"Accept": "application/json"}})
+      .then(function (response) { return response.json(); })
+      .then(updateLatestRunProgress)
+      .catch(function () {});
+  }
+
+  progressTimer = window.setInterval(pollLatestRunProgress, 2500);
+  pollLatestRunProgress();
+</script>
+{% endif %}
 {% endblock %}

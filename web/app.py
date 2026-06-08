@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from web.auth import expected_password, expected_username, login_required
 from web.db import (
@@ -121,6 +121,27 @@ def pipeline():
         config=get_config(),
         latest_run=latest_run(),
         runs=all_runs(),
+    )
+
+
+@app.route("/pipeline/status")
+@login_required
+def pipeline_status():
+    run = latest_run()
+    if not run:
+        return jsonify({"has_run": False})
+    return jsonify(
+        {
+            "has_run": True,
+            "id": run["id"],
+            "status": run["status"],
+            "progress_percent": run["progress_percent"] or 0,
+            "progress_message": run["progress_message"] or run["status"],
+            "started_at": run["started_at"] or "-",
+            "ended_at": run["ended_at"] or "-",
+            "output_file": run["output_file"] or "-",
+            "error_message": run["error_message"] or "",
+        }
     )
 
 

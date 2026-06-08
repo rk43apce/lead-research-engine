@@ -19,13 +19,14 @@ def start_pipeline(run_id: int, config: dict[str, str], limit_count: int, genera
 
 
 def _run_pipeline(run_id: int, config: dict[str, str], limit_count: int, generate_leads: bool) -> None:
-    update_pipeline_run(run_id, status="running")
+    update_pipeline_run(run_id, status="running", progress_percent=10, progress_message="Starting pipeline")
     env = os.environ.copy()
     env.update(_pipeline_env(config))
 
     try:
         captured_output = []
         if generate_leads:
+            update_pipeline_run(run_id, progress_percent=20, progress_message="Generating fresh leads")
             lead_result = _run_command(
                 [
                     sys.executable,
@@ -48,12 +49,15 @@ def _run_pipeline(run_id: int, config: dict[str, str], limit_count: int, generat
                     log_tail=_tail_text("\n".join(captured_output), 4000),
                 )
                 return
+            update_pipeline_run(run_id, progress_percent=45, progress_message="Lead generation completed")
 
+        update_pipeline_run(run_id, progress_percent=55, progress_message="Researching leads and drafting emails")
         pipeline_result = _run_command([sys.executable, "main.py", "--limit", str(limit_count)], env)
         captured_output.append("=== Enrichment Pipeline ===\n%s\n%s" % (pipeline_result.stdout, pipeline_result.stderr))
         log_tail = _tail_text("\n".join(captured_output), 4000)
 
         if pipeline_result.returncode == 0:
+            update_pipeline_run(run_id, progress_percent=90, progress_message="Finalizing output CSV")
             finish_pipeline_run(
                 run_id,
                 "completed",

@@ -2,45 +2,130 @@
 {% set title = "Dashboard" %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Dashboard</h1>
-  <a class="btn btn-primary" href="{{ url_for('pipeline') }}">Run Pipeline</a>
+<div class="dashboard-hero mb-4">
+  <div>
+    <div class="dashboard-kicker">AI Lead Research</div>
+    <h1 class="h3 mb-1">Pipeline Dashboard</h1>
+    <p class="text-muted mb-0">Track enrichment runs, review generated drafts, and export only approved emails.</p>
+  </div>
+  <div class="dashboard-actions">
+    <a class="btn btn-primary" href="{{ url_for('pipeline') }}">Run Pipeline</a>
+    {% if latest_output %}
+      <a class="btn btn-outline-primary" href="{{ url_for('review_output', filename=latest_output) }}">Review Latest</a>
+    {% else %}
+      <a class="btn btn-outline-primary" href="{{ url_for('outputs') }}">View Outputs</a>
+    {% endif %}
+  </div>
 </div>
 
 <div class="row g-3 mb-4">
-  <div class="col-md-3"><div class="metric"><span>Total leads</span><strong>{{ counts.total_leads }}</strong></div></div>
-  <div class="col-md-3"><div class="metric"><span>Total processed</span><strong>{{ counts.total_processed }}</strong></div></div>
-  <div class="col-md-3"><div class="metric"><span>Approved emails</span><strong>{{ counts.total_approved }}</strong></div></div>
-  <div class="col-md-3"><div class="metric"><span>Rejected emails</span><strong>{{ counts.total_rejected }}</strong></div></div>
+  <div class="col-md-3">
+    <div class="metric metric-primary">
+      <span>Reviewable Emails</span>
+      <strong>{{ counts.total_leads }}</strong>
+      <small>Drafts ready for human review</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="metric">
+      <span>Processed Attempts</span>
+      <strong>{{ counts.total_processed }}</strong>
+      <small>Completed run limit total</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="metric metric-approved">
+      <span>Approved Emails</span>
+      <strong>{{ counts.total_approved }}</strong>
+      <small>Ready for future sending</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="metric metric-rejected">
+      <span>Rejected Emails</span>
+      <strong>{{ counts.total_rejected }}</strong>
+      <small>Removed from export</small>
+    </div>
+  </div>
 </div>
 
-<div class="row g-3">
-  <div class="col-md-6">
-    <div class="card">
+<div class="row g-3 align-items-stretch">
+  <div class="col-lg-7">
+    <div class="card dashboard-card h-100">
       <div class="card-body">
-        <h2 class="h5">Latest Pipeline Status</h2>
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Latest Pipeline Run</h2>
+            <div class="text-muted small">Most recent orchestration from the UI</div>
+          </div>
+          {% if latest_run %}
+            <span class="badge status-badge status-{{ latest_run.status }}">{{ latest_run.status }}</span>
+          {% endif %}
+        </div>
         {% if latest_run %}
-          <p class="mb-1"><span class="badge text-bg-secondary">{{ latest_run.status }}</span></p>
-          <p class="mb-1">Started: {{ latest_run.started_at or "-" }}</p>
-          <p class="mb-0">Ended: {{ latest_run.ended_at or "-" }}</p>
+          <div class="run-detail-grid">
+            <div>
+              <span>Started</span>
+              <strong>{{ latest_run.started_at or "-" }}</strong>
+            </div>
+            <div>
+              <span>Ended</span>
+              <strong>{{ latest_run.ended_at or "-" }}</strong>
+            </div>
+            <div>
+              <span>Limit</span>
+              <strong>{{ latest_run.limit_count or "-" }}</strong>
+            </div>
+            <div>
+              <span>Output</span>
+              <strong>{{ latest_run.output_file or "-" }}</strong>
+            </div>
+          </div>
+          <div class="mt-3 d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('pipeline') }}">Open Pipeline</a>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('logs') }}">View Latest Log</a>
+          </div>
         {% else %}
           <p class="text-muted mb-0">No pipeline runs yet.</p>
         {% endif %}
       </div>
     </div>
   </div>
-  <div class="col-md-6">
-    <div class="card">
+  <div class="col-lg-5">
+    <div class="card dashboard-card h-100">
       <div class="card-body">
-        <h2 class="h5">Latest Output CSV</h2>
+        <h2 class="h5 mb-1">Latest Output</h2>
+        <div class="text-muted small mb-3">Open the newest CSV review queue</div>
         {% if latest_output %}
-          <p class="mb-3">{{ latest_output }}</p>
-          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('review_output', filename=latest_output) }}">Open Review</a>
+          <div class="latest-output-name">{{ latest_output }}</div>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <a class="btn btn-primary btn-sm" href="{{ url_for('review_output', filename=latest_output) }}">Open Review</a>
+            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('outputs') }}">All Outputs</a>
+          </div>
         {% else %}
-          <p class="text-muted mb-0">No output files found.</p>
+          <p class="text-muted mb-3">No output files found.</p>
+          <a class="btn btn-primary btn-sm" href="{{ url_for('pipeline') }}">Create First Output</a>
         {% endif %}
       </div>
     </div>
+  </div>
+</div>
+
+<div class="dashboard-workflow mt-4">
+  <div>
+    <span>1</span>
+    <strong>Generate or import leads</strong>
+    <p>Use the configured input CSV or create a fresh batch.</p>
+  </div>
+  <div>
+    <span>2</span>
+    <strong>Research and draft</strong>
+    <p>The CLI pipeline enriches companies and creates personalized emails.</p>
+  </div>
+  <div>
+    <span>3</span>
+    <strong>Review and export</strong>
+    <p>Approve only the drafts that should enter the future sending flow.</p>
   </div>
 </div>
 {% endblock %}

@@ -106,16 +106,24 @@
     </div>
     <div class="offcanvas-body">
       <div>
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <label class="form-label mb-0" for="drawerSubject">Subject</label>
-          <span class="text-muted small">Saved drafts become status: modified</span>
-        </div>
-        <input class="form-control mb-3" id="drawerSubject" name="subject" placeholder="Email subject">
-        <label class="form-label" for="drawerBody">Body</label>
-        <textarea class="form-control email-editor" id="drawerBody" name="body" spellcheck="true"></textarea>
-        <div class="drawer-fraud-angle mt-3">
+        <div class="drawer-fraud-angle mb-3">
           <div class="context-label mb-1">Fraud angle</div>
           <p id="drawerFraudAngle">Fraud angle unavailable</p>
+        </div>
+        <div class="email-read-view" id="emailReadView" tabindex="0">
+          <button class="btn btn-outline-primary btn-sm email-read-edit" id="emailReadEditButton" type="button">Edit</button>
+          <div class="email-read-subject" id="emailReadSubject">No subject</div>
+          <div class="email-read-body" id="emailReadBody">No email generated.</div>
+        </div>
+        <div class="email-edit-view d-none" id="emailEditView">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label mb-0" for="drawerSubject">Subject</label>
+            <button class="btn btn-outline-secondary btn-sm" id="emailReadCancelButton" type="button">Reading view</button>
+          </div>
+          <input class="form-control mb-3" id="drawerSubject" name="subject" placeholder="Email subject">
+          <label class="form-label" for="drawerBody">Body</label>
+          <textarea class="form-control email-editor" id="drawerBody" name="body" spellcheck="true"></textarea>
+          <div class="text-muted small mt-2">Saved drafts become status: modified</div>
         </div>
       </div>
     </div>
@@ -145,6 +153,12 @@
   var drawerInstitutionType = document.getElementById("drawerInstitutionType");
   var drawerSource = document.getElementById("drawerSource");
   var drawerFraudAngle = document.getElementById("drawerFraudAngle");
+  var emailReadView = document.getElementById("emailReadView");
+  var emailEditView = document.getElementById("emailEditView");
+  var emailReadSubject = document.getElementById("emailReadSubject");
+  var emailReadBody = document.getElementById("emailReadBody");
+  var emailReadEditButton = document.getElementById("emailReadEditButton");
+  var emailReadCancelButton = document.getElementById("emailReadCancelButton");
   var drawerSubject = document.getElementById("drawerSubject");
   var drawerBody = document.getElementById("drawerBody");
   var drawerPrevButton = document.getElementById("drawerPrevButton");
@@ -161,8 +175,11 @@
     drawerTitle.textContent = item.company || "Unknown company";
     drawerSubject.value = item.email_subject || "";
     drawerBody.value = item.email_body || "";
+    emailReadSubject.textContent = item.email_subject || "No subject";
+    emailReadBody.textContent = item.email_body || item.final_email || "No email generated.";
     drawerPrevButton.disabled = index === 0;
     drawerNextButton.disabled = index === reviewItems.length - 1;
+    setEditorMode(false);
 
     drawerInstitutionType.textContent = item.institution_type || "Institution unavailable";
     drawerFraudAngle.textContent = item.fraud_angle || "Fraud angle unavailable";
@@ -179,13 +196,27 @@
     }
   }
 
+  function setEditorMode(isEditing) {
+    if (!emailReadView || !emailEditView) {
+      return;
+    }
+
+    emailReadView.classList.toggle("d-none", isEditing);
+    emailEditView.classList.toggle("d-none", !isEditing);
+    if (isEditing) {
+      drawerSubject.focus();
+    } else {
+      emailReadView.focus();
+    }
+  }
+
   function openReviewDrawer(index) {
     if (!drawerElement) {
       return;
     }
     updateDrawer(index);
     bootstrap.Offcanvas.getOrCreateInstance(drawerElement).show();
-    drawerSubject.focus();
+    emailReadView.focus();
   }
 
   document.querySelectorAll(".edit-drawer-button").forEach(function (button) {
@@ -212,14 +243,26 @@
   if (drawerPrevButton) {
     drawerPrevButton.addEventListener("click", function () {
       updateDrawer(activeReviewIndex - 1);
-      drawerSubject.focus();
+      emailReadView.focus();
     });
   }
 
   if (drawerNextButton) {
     drawerNextButton.addEventListener("click", function () {
       updateDrawer(activeReviewIndex + 1);
-      drawerSubject.focus();
+      emailReadView.focus();
+    });
+  }
+
+  if (emailReadEditButton) {
+    emailReadEditButton.addEventListener("click", function () {
+      setEditorMode(true);
+    });
+  }
+
+  if (emailReadCancelButton) {
+    emailReadCancelButton.addEventListener("click", function () {
+      setEditorMode(false);
     });
   }
 </script>

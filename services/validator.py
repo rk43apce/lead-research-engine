@@ -1,3 +1,5 @@
+import re
+
 from services.logger import log_warning
 from services.models import EmailDraft, PublicSignal, SignalType
 
@@ -72,11 +74,13 @@ class LeadValidator:
                 step="email_validation",
             )
             body = (
-                "I could not find a recent verifiable public signal, so I will keep this general. "
+                "Hello,\n\n"
+                "I could not find a recent verifiable public signal, so I will keep this general.\n\n"
                 "Financial institutions still face pressure to improve fraud review coverage without adding "
-                "PII exposure or disrupting existing workflows. The PreCogs helps augment fraud and risk teams "
-                "with AI-driven prevention context while keeping analysts in control. "
-                "Would a brief note on fit be useful?"
+                "PII exposure or disrupting existing workflows.\n\n"
+                "The PreCogs helps augment fraud and risk teams with AI-driven prevention context while keeping "
+                "analysts in control.\n\n"
+                "Would a brief note on fit be useful?\n\nBest,"
             )
             email = self._join_subject_body(subject or self._fallback_subject(company), body)
 
@@ -98,7 +102,7 @@ class LeadValidator:
     def _normalize_email_format(self, value: str, company: str = "") -> str:
         subject, body = self._split_subject_body(value)
         subject = subject or self._fallback_subject(company)
-        body = " ".join(body.split())
+        body = self._normalize_body(body)
         return self._join_subject_body(subject, body)
 
     def _split_subject_body(self, value: str):
@@ -132,6 +136,56 @@ class LeadValidator:
 
     def _join_subject_body(self, subject: str, body: str) -> str:
         return "Subject: %s\n\n%s" % (subject.strip(), body.strip())
+
+    def _normalize_body(self, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+
+        paragraphs = [self._collapse_spaces(part) for part in re.split(r"\n\s*\n", text) if part.strip()]
+        if len(paragraphs) > 1:
+            return "\n\n".join(paragraphs)
+
+        return "\n\n".join(self._paragraphize_dense_body(self._collapse_spaces(text)))
+
+    def _paragraphize_dense_body(self, text: str) -> list[str]:
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+        if len(sentences) <= 2:
+            return [text]
+
+        signoff = ""
+        if sentences and sentences[-1].lower().rstrip(".") in {"best", "best regards", "regards", "thanks", "thank you"}:
+            signoff = sentences.pop()
+
+        cta = ""
+        if sentences and self._looks_like_cta(sentences[-1]):
+            cta = sentences.pop()
+
+        paragraphs = []
+        if sentences:
+            paragraphs.append(sentences[0])
+
+        if len(sentences) >= 2:
+            paragraphs.append(sentences[1])
+
+        middle = sentences[2:]
+        if middle:
+            paragraphs.append(" ".join(middle))
+
+        if cta:
+            paragraphs.append(cta)
+
+        if signoff:
+            paragraphs.append(signoff)
+
+        return paragraphs
+
+    def _looks_like_cta(self, sentence: str) -> bool:
+        lowered = sentence.lower()
+        return lowered.startswith(("would you", "are you open", "could we", "can we", "open to"))
+
+    def _collapse_spaces(self, value: str) -> str:
+        return " ".join(str(value or "").split())
 
     def _fallback_subject(self, company: str) -> str:
         subject = "Fraud review support"

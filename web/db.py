@@ -50,9 +50,21 @@ def init_db() -> None:
                 ended_at TEXT,
                 output_file TEXT,
                 error_message TEXT,
-                log_tail TEXT
+                log_tail TEXT,
+                progress_percent INTEGER NOT NULL DEFAULT 0,
+                progress_message TEXT NOT NULL DEFAULT 'Queued'
             )
             """
+        )
+        _ensure_column(conn, "pipeline_runs", "progress_percent", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "pipeline_runs", "progress_message", "TEXT NOT NULL DEFAULT 'Queued'")
+        conn.execute(
+            "UPDATE pipeline_runs SET progress_percent = 100, progress_message = 'Completed' "
+            "WHERE status = 'completed' AND progress_percent = 0"
+        )
+        conn.execute(
+            "UPDATE pipeline_runs SET progress_percent = 100, progress_message = 'Failed' "
+            "WHERE status = 'failed' AND progress_percent = 0"
         )
         conn.execute(
             """
@@ -90,6 +102,12 @@ def get_config() -> dict[str, str]:
     return config
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table).fetchall()}
+    if column not in existing:
+        conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, definition))
+
+
 def save_config(values: dict[str, Any]) -> None:
     allowed = set(DEFAULT_CONFIG.keys())
     with get_connection() as conn:
@@ -106,8 +124,8 @@ def save_config(values: dict[str, Any]) -> None:
 def create_pipeline_run(limit_count: int) -> int:
     with get_connection() as conn:
         cursor = conn.execute(
-            "INSERT INTO pipeline_runs (status, limit_count, started_at) "
-            "VALUES ('pending', ?, datetime('now'))",
+            "INSERT INTO pipeline_runs (status, limit_count, started_at, progress_percent, progress_message) "
+            "VALUES ('pending', ?, datetime('now'), 5, 'Queued')",
             (limit_count,),
         )
         return int(cursor.lastrowid)
@@ -135,10 +153,19 @@ def finish_pipeline_run(
             """
             UPDATE pipeline_runs
             SET status = ?, ended_at = datetime('now'), output_file = ?,
-                error_message = ?, log_tail = ?
+                error_message = ?, log_tail = ?, progress_percent = ?,
+                progress_message = ?
             WHERE id = ?
             """,
-            (status, output_file, error_message, log_tail, run_id),
+            (
+                status,
+                output_file,
+                error_message,
+                log_tail,
+                100 if status == "completed" else 100,
+                "Completed" if status == "completed" else "Failed",
+                run_id,
+            ),
         )
 
 

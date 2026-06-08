@@ -265,6 +265,31 @@ a:hover {
   border: 1px solid var(--precogs-border);
   box-shadow: 0 10px 24px var(--precogs-shadow);
   padding: 1rem;
+  min-height: 132px;
+  position: relative;
+  overflow: hidden;
+}
+
+.metric::before {
+  background: var(--precogs-primary);
+  content: "";
+  height: 4px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.metric-primary::before {
+  background: var(--precogs-primary);
+}
+
+.metric-approved::before {
+  background: var(--precogs-accent);
+}
+
+.metric-rejected::before {
+  background: var(--precogs-danger);
 }
 
 .metric span {
@@ -277,6 +302,183 @@ a:hover {
   display: block;
   font-size: 2rem;
   line-height: 1.1;
+  margin: 0.35rem 0;
+}
+
+.metric small {
+  color: var(--precogs-muted);
+  display: block;
+  font-size: 0.78rem;
+}
+
+.dashboard-hero {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--precogs-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px var(--precogs-shadow);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1.2rem 1.35rem;
+}
+
+.dashboard-kicker {
+  color: var(--precogs-accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.dashboard-card {
+  border: 1px solid var(--precogs-border);
+  box-shadow: 0 10px 24px var(--precogs-shadow);
+}
+
+.status-badge {
+  font-size: 0.78rem;
+  text-transform: capitalize;
+}
+
+.status-completed {
+  background: rgba(255, 64, 129, 0.12);
+  color: #9c1f52;
+}
+
+.status-running,
+.status-pending {
+  background: rgba(63, 81, 181, 0.12);
+  color: var(--precogs-primary-dark);
+}
+
+.status-failed {
+  background: rgba(244, 67, 54, 0.12);
+  color: #b42318;
+}
+
+.run-detail-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.run-detail-grid div {
+  background: var(--precogs-soft);
+  border: 1px solid var(--precogs-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  min-width: 0;
+}
+
+.run-detail-grid span {
+  color: var(--precogs-muted);
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+  text-transform: uppercase;
+}
+
+.run-detail-grid strong {
+  display: block;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.latest-output-name {
+  background: var(--precogs-soft);
+  border: 1px solid var(--precogs-border);
+  border-radius: 8px;
+  color: var(--precogs-primary-dark);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  padding: 0.85rem;
+}
+
+.dashboard-workflow {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-workflow div {
+  background: #fff;
+  border: 1px solid var(--precogs-border);
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
+.dashboard-workflow span {
+  align-items: center;
+  background: var(--precogs-primary);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  height: 26px;
+  justify-content: center;
+  margin-bottom: 0.6rem;
+  width: 26px;
+}
+
+.dashboard-workflow strong {
+  display: block;
+  font-size: 0.92rem;
+  margin-bottom: 0.25rem;
+}
+
+.dashboard-workflow p {
+  color: var(--precogs-muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.pipeline-run-actions {
+  display: flex;
+  flex-direction: column;
+}
+
+.pipeline-progress .progress {
+  height: 1.25rem;
+}
+
+.pipeline-progress .progress-bar {
+  background-color: var(--precogs-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.run-progress-cell {
+  min-width: 140px;
+}
+
+.run-progress-cell .progress {
+  display: inline-flex;
+  height: 0.45rem;
+  margin-right: 0.45rem;
+  vertical-align: middle;
+  width: 92px;
+}
+
+.run-progress-cell .progress-bar {
+  background-color: var(--precogs-primary);
+}
+
+.run-progress-cell span {
+  color: var(--precogs-muted);
+  font-size: 0.8rem;
 }
 
 .email-editor {
@@ -288,6 +490,67 @@ a:hover {
   line-height: 1.55;
   resize: none;
   overflow-y: auto;
+}
+
+.email-read-view {
+  background: #fff;
+  border: 1px solid var(--precogs-border);
+  border-radius: 8px;
+  min-height: clamp(240px, 44vh, 520px);
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 1rem 1.1rem;
+  position: relative;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.email-read-view:hover,
+.email-read-view:focus {
+  border-color: rgba(63, 81, 181, 0.35);
+  box-shadow: 0 8px 22px rgba(63, 81, 181, 0.1);
+  outline: 0;
+}
+
+.email-read-edit {
+  opacity: 0;
+  position: sticky;
+  top: 0;
+  float: right;
+  margin-left: 0.75rem;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  z-index: 1;
+}
+
+.email-read-view:hover .email-read-edit,
+.email-read-view:focus .email-read-edit,
+.email-read-view:focus-within .email-read-edit {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.email-read-subject {
+  border-bottom: 1px solid var(--precogs-border);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-bottom: 1rem;
+  padding-bottom: 0.85rem;
+  padding-right: 4rem;
+}
+
+.email-read-body {
+  color: var(--precogs-ink);
+  font-size: 0.96rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.email-edit-view {
+  background: #fff;
+  border: 1px solid var(--precogs-border);
+  border-radius: 8px;
+  padding: 1rem;
 }
 
 .review-header {
@@ -563,14 +826,14 @@ a:hover {
 .drawer-header-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.2rem 0.75rem;
+  gap: 0.18rem 0.7rem;
   margin-top: 0.12rem;
 }
 
 .drawer-header-meta span {
   color: var(--precogs-muted);
   font-size: 0.74rem;
-  max-width: 360px;
+  max-width: min(360px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -595,11 +858,14 @@ a:hover {
   background: #fff;
   border: 1px solid var(--precogs-border);
   border-radius: 8px;
-  padding: 0.75rem 0.9rem;
+  max-height: 76px;
+  overflow-y: auto;
+  padding: 0.55rem 0.75rem;
 }
 
 .drawer-fraud-angle p {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -646,6 +912,25 @@ a:hover {
 
   .footer-links {
     justify-content: flex-start;
+  }
+
+  .dashboard-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .dashboard-actions .btn {
+    flex: 1 1 160px;
+  }
+
+  .run-detail-grid,
+  .dashboard-workflow {
+    grid-template-columns: 1fr;
   }
 
   .email-edit-drawer {
@@ -710,6 +995,16 @@ a:hover {
     height: clamp(175px, 30vh, 300px);
     min-height: 175px;
     max-height: 32vh;
+  }
+
+  .email-read-view {
+    min-height: clamp(220px, 42vh, 460px);
+    max-height: 52vh;
+  }
+
+  .email-read-edit {
+    opacity: 1;
+    pointer-events: auto;
   }
 
 }

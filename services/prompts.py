@@ -79,8 +79,14 @@ Hard rules:
 - Return a personalized subject and a body.
 - Subject must be specific to the company context, not generic.
 - Subject must be under 9 words.
-- Email body must be under 120 words.
-- Email body should start with a simple greeting.
+- Email body must be under 120 words, ideally 80-105 words.
+- Email body must read like a real personalized email, not one dense paragraph.
+- Format the body as 4 short paragraphs separated by blank lines:
+  1. simple greeting plus the company-specific observation
+  2. why that matters for fraud/risk
+  3. how The PreCogs can help, including no-PII positioning
+  4. low-friction CTA plus a short signoff
+- Keep each paragraph to 1-2 short sentences.
 - Mention the recent signal first only if has_signal is true.
 - If has_website_context_source is true, you may use the source as general website context, but do not call it recent news or a recent signal.
 - If has_signal is false, say you could not find a recent public signal and do not pretend otherwise.

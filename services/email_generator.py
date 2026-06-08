@@ -178,9 +178,13 @@ class LeadContentGenerator:
 
         subject = self._fallback_subject(context, classification)
         body = (
-            "%s%s That can create pressure around %s. Fraud and risk teams often need more review coverage without adding PII exposure "
-            "or replacing existing workflows. The PreCogs helps augment analysts with AI-driven "
-            "fraud prevention context while keeping teams in control. Would a brief note on fit be useful?"
+            "Hello,\n\n"
+            "%s%s\n\n"
+            "That can create pressure around %s.\n\n"
+            "The PreCogs helps fraud and risk teams add AI-driven review coverage without PII exposure "
+            "or replacing existing workflows.\n\n"
+            "Would a brief note on fit be useful?\n\n"
+            "Best,"
         ) % (opener, context_line, risk_line)
         return self._format_subject_and_body(subject, body)
 
